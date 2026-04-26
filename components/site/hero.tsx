@@ -1,21 +1,12 @@
 "use client"
 
-import dynamic from "next/dynamic"
 import { Button } from "@/components/ui/button"
 import { ArrowRight, Gift } from "lucide-react"
 import { motion } from "framer-motion"
 
-const HeroScene = dynamic(
-  () => import("./hero-scene").then((m) => ({ default: m.HeroScene })),
-  { ssr: false }
-)
-
 export function Hero() {
   return (
     <section className="relative flex min-h-[100dvh] flex-col items-center justify-center overflow-hidden px-6 pt-16">
-      {/* 3D background */}
-      <HeroScene />
-
       <div className="relative mx-auto flex w-full max-w-5xl flex-col items-center gap-16 md:flex-row md:items-center md:justify-between">
         {/* Left copy */}
         <motion.div

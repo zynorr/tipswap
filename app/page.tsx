@@ -5,17 +5,16 @@ import { Features } from "@/components/site/features"
 import { UseCases } from "@/components/site/use-cases"
 import { Waitlist } from "@/components/site/waitlist"
 import { SiteFooter } from "@/components/site/footer"
-import { SceneDivider } from "@/components/site/scene-divider"
+import { NetworkWrapper } from "@/components/site/network-wrapper"
 
 export default function Page() {
   return (
-    <main className="flex min-h-screen flex-col bg-background text-foreground">
+    <main className="relative flex min-h-screen flex-col bg-background text-foreground">
+      <NetworkWrapper />
       <SiteNav />
       <Hero />
       <HowItWorks />
-      <SceneDivider />
       <Features />
-      <SceneDivider />
       <UseCases />
       <Waitlist />
       <SiteFooter />
