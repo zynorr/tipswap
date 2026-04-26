@@ -1,62 +1,72 @@
-import { ArrowRight } from "lucide-react"
+"use client"
+
+import { motion } from "framer-motion"
 
 const steps = [
   {
-    n: "01",
-    title: "Send a command",
-    body: "Reply to any message with /tip 5 USDT. The bot resolves the recipient's wallet from their Telegram ID.",
-    code: "/tip 5 USDT @alice",
+    step: "01",
+    title: "Reply with a tip",
+    description: "Type /tip 5 USDT @alice in any Telegram chat. TipSwap resolves the recipient and fetches a live swap quote.",
+    detail: "/tip 5 USDT @alice",
   },
   {
-    n: "02",
-    title: "Omniston routes the swap",
-    body: "TipSwap fetches a real-time quote via the STON.fi SDK and Omniston RFQ, then builds an atomic swap-and-send transaction.",
-    code: "router.getSwapTxParams({ ... })",
+    step: "02",
+    title: "Review and confirm",
+    description: "The bot shows you exactly what you pay, what they receive, and the exchange rate. One tap to confirm.",
+    detail: "2.41 TON -> 5.00 USDT",
   },
   {
-    n: "03",
-    title: "Recipient gets their token",
-    body: "The transaction settles in one TON message tree. Either both legs succeed or both revert — no half-swaps, ever.",
-    code: "→ 5.00 USDT credited",
+    step: "03",
+    title: "Recipient gets paid",
+    description: "The swap and transfer happen atomically on TON. Either both succeed or nothing moves. The recipient is notified instantly.",
+    detail: "Settled in ~5 seconds",
   },
 ]
 
 export function HowItWorks() {
   return (
-    <section id="how-it-works" className="relative border-b border-border">
-      <div className="mx-auto w-full max-w-6xl px-6 py-24">
-        <div className="flex flex-col items-start gap-4">
-          <span className="font-mono text-xs uppercase tracking-widest text-primary">
+    <section id="how-it-works" className="px-6 py-32">
+      <div className="mx-auto w-full max-w-5xl">
+        <motion.div
+          className="flex flex-col gap-4"
+          initial={{ opacity: 0 }}
+          whileInView={{ opacity: 1 }}
+          viewport={{ once: true, margin: "-100px" }}
+          transition={{ duration: 0.5 }}
+        >
+          <p className="text-[13px] font-medium tracking-wide text-primary">
             How it works
-          </span>
-          <h2 className="max-w-3xl text-balance text-4xl font-medium leading-tight tracking-tight md:text-5xl">
-            One command. One transaction.{" "}
-            <span className="text-muted-foreground">Any token to any token.</span>
+          </p>
+          <h2 className="max-w-lg text-balance text-3xl font-semibold leading-tight tracking-tight text-foreground sm:text-4xl">
+            Three steps. One transaction. Done.
           </h2>
-        </div>
+        </motion.div>
 
-        <div className="mt-16 grid gap-px overflow-hidden rounded-xl border border-border bg-border md:grid-cols-3">
-          {steps.map((step, i) => (
-            <div
-              key={step.n}
-              className="relative flex flex-col gap-6 bg-card p-8"
+        <div className="mt-16 grid gap-6 md:grid-cols-3">
+          {steps.map((s, i) => (
+            <motion.div
+              key={s.step}
+              className="group flex flex-col gap-5 rounded-2xl border border-border bg-card p-7"
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true, margin: "-80px" }}
+              transition={{ duration: 0.45, delay: i * 0.1 }}
             >
-              <div className="flex items-center justify-between">
-                <span className="font-mono text-xs text-muted-foreground">
-                  {step.n}
-                </span>
-                {i < steps.length - 1 && (
-                  <ArrowRight className="hidden h-4 w-4 text-muted-foreground md:block" />
-                )}
+              <span className="font-mono text-xs text-muted-foreground">
+                {s.step}
+              </span>
+              <div className="flex flex-col gap-3">
+                <h3 className="text-lg font-semibold text-foreground">
+                  {s.title}
+                </h3>
+                <p className="text-sm leading-relaxed text-muted-foreground">
+                  {s.description}
+                </p>
               </div>
-              <h3 className="text-xl font-medium">{step.title}</h3>
-              <p className="flex-1 text-sm leading-relaxed text-muted-foreground">
-                {step.body}
-              </p>
-              <pre className="overflow-x-auto rounded-lg border border-border bg-background/60 p-3 font-mono text-xs text-primary">
-                {step.code}
-              </pre>
-            </div>
+              <div className="mt-auto rounded-lg border border-border bg-background px-4 py-3 font-mono text-xs text-primary">
+                {s.detail}
+              </div>
+            </motion.div>
           ))}
         </div>
       </div>
