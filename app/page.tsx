@@ -8,7 +8,7 @@ import { SiteFooter } from "@/components/site/footer"
 
 export default function Page() {
   return (
-    <main className="flex min-h-screen flex-col">
+    <main className="flex min-h-screen flex-col bg-background text-foreground">
       <SiteNav />
       <Hero />
       <HowItWorks />
