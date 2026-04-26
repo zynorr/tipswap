@@ -7,16 +7,33 @@ import { ArrowRight, Check, Loader2 } from "lucide-react"
 import { motion } from "framer-motion"
 
 export function Waitlist() {
-  const [status, setStatus] = useState<"idle" | "loading" | "done">("idle")
+  const [status, setStatus] = useState<"idle" | "loading" | "done" | "error">("idle")
   const [email, setEmail] = useState("")
   const [tg, setTg] = useState("")
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     if (!email) return
     setStatus("loading")
-    await new Promise((r) => setTimeout(r, 700))
-    setStatus("done")
+    setErrorMsg(null)
+    try {
+      const res = await fetch("/api/waitlist", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email, telegram_handle: tg }),
+      })
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string }
+        setErrorMsg(data.error ?? "Something went wrong. Try again.")
+        setStatus("error")
+        return
+      }
+      setStatus("done")
+    } catch {
+      setErrorMsg("Network error. Try again.")
+      setStatus("error")
+    }
   }
 
   return (
@@ -79,6 +96,11 @@ export function Waitlist() {
                   </>
                 )}
               </Button>
+              {errorMsg && (
+                <p className="pt-1 text-center text-[11px] text-red-400 lg:text-left">
+                  {errorMsg}
+                </p>
+              )}
               <p className="pt-1 text-center text-[11px] text-muted-foreground lg:text-left">
                 No spam. One email when the beta opens.
               </p>
