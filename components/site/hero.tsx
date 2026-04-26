@@ -1,180 +1,174 @@
+"use client"
+
 import { Button } from "@/components/ui/button"
-import { ArrowRight, Check, Gift } from "lucide-react"
+import { ArrowRight, Gift } from "lucide-react"
+import { motion } from "framer-motion"
 
 export function Hero() {
   return (
-    <section className="relative overflow-hidden border-b border-border">
-      <div className="grid-bg pointer-events-none absolute inset-0 opacity-40" />
+    <section className="relative flex min-h-[100dvh] flex-col items-center justify-center overflow-hidden px-6 pt-16">
+      {/* Ambient glow */}
       <div
-        className="pointer-events-none absolute left-1/2 top-0 h-[600px] w-[800px] -translate-x-1/2 -translate-y-1/3 rounded-full opacity-30 blur-3xl"
+        className="pointer-events-none absolute top-[-20%] left-1/2 h-[600px] w-[900px] -translate-x-1/2 opacity-[0.07]"
         style={{
-          background:
-            "radial-gradient(closest-side, oklch(0.8 0.15 195 / 0.4), transparent)",
+          background: "radial-gradient(ellipse at center, oklch(0.78 0.16 190), transparent 70%)",
         }}
       />
 
-      <div className="relative mx-auto grid w-full max-w-6xl gap-16 px-6 py-24 md:grid-cols-[1.1fr_1fr] md:items-center md:py-32">
-        <div className="flex flex-col gap-6">
-          <a
-            href="https://ston.fi/grant-program"
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex w-fit items-center gap-2 rounded-full border border-border bg-card/60 px-3 py-1 font-mono text-xs text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground"
-          >
-            <span className="h-1.5 w-1.5 rounded-full bg-primary" />
-            STON.fi Grant Application
-            <ArrowRight className="h-3 w-3" />
-          </a>
-
-          <h1 className="text-balance font-sans text-5xl font-medium leading-[1.05] tracking-tight md:text-6xl lg:text-7xl">
-            <span className="text-gradient-primary">Tip anyone on Telegram,</span>
-            <br />
-            <span className="text-foreground">in any token.</span>
-          </h1>
-
-          <p className="max-w-xl text-pretty text-lg leading-relaxed text-muted-foreground">
-            TipSwap turns every Telegram message into a programmable payment.
-            Senders pay in TON, recipients receive USDT — STON.fi handles the
-            swap atomically in between.
+      <div className="relative mx-auto flex w-full max-w-5xl flex-col items-center gap-16 md:flex-row md:items-center md:justify-between">
+        {/* Left copy */}
+        <motion.div
+          className="flex max-w-lg flex-col gap-6 text-center md:text-left"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6, ease: [0.25, 0.46, 0.45, 0.94] }}
+        >
+          <p className="text-[13px] font-medium tracking-wide text-primary">
+            Telegram-native payments on TON
           </p>
 
-          <div className="flex flex-wrap items-center gap-3 pt-2">
-            <Button asChild size="lg">
+          <h1 className="text-balance font-sans text-4xl font-semibold leading-[1.1] tracking-tight text-foreground sm:text-5xl lg:text-[56px]">
+            Tip anyone in any token. Right inside Telegram.
+          </h1>
+
+          <p className="text-pretty text-base leading-relaxed text-muted-foreground sm:text-lg">
+            Reply with a command. Pick any token you hold. The recipient gets the token they want. The swap happens on-chain, in one transaction.
+          </p>
+
+          <div className="flex flex-col items-center gap-3 pt-2 sm:flex-row md:items-start">
+            <Button asChild size="lg" className="h-12 rounded-xl px-6 text-sm font-medium">
               <a href="#waitlist">
                 Join the waitlist
-                <ArrowRight className="ml-1 h-4 w-4" />
+                <ArrowRight className="ml-2 h-4 w-4" />
               </a>
             </Button>
-            <Button asChild size="lg" variant="outline">
-              <a href="#architecture">View architecture</a>
+            <Button asChild size="lg" variant="ghost" className="h-12 rounded-xl px-6 text-sm font-medium text-muted-foreground">
+              <a href="#how-it-works">See how it works</a>
             </Button>
           </div>
 
-          <ul className="flex flex-wrap gap-x-6 gap-y-2 pt-4 text-sm text-muted-foreground">
-            {[
-              "Built on TON",
-              "Powered by STON.fi SDK",
-              "Self-custody by default",
-            ].map((item) => (
-              <li key={item} className="flex items-center gap-2">
-                <Check className="h-4 w-4 text-primary" />
-                {item}
-              </li>
-            ))}
-          </ul>
-        </div>
+          <div className="flex items-center justify-center gap-6 pt-2 md:justify-start">
+            <Stat value="~5s" label="Settlement" />
+            <div className="h-8 w-px bg-border" />
+            <Stat value="<$0.01" label="Per tip" />
+            <div className="h-8 w-px bg-border" />
+            <Stat value="30K+" label="Tokens" />
+          </div>
+        </motion.div>
 
-        <HeroChat />
+        {/* Right: chat mockup */}
+        <motion.div
+          className="w-full max-w-sm"
+          initial={{ opacity: 0, y: 30 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6, delay: 0.15, ease: [0.25, 0.46, 0.45, 0.94] }}
+        >
+          <HeroChat />
+        </motion.div>
       </div>
     </section>
   )
 }
 
+function Stat({ value, label }: { value: string; label: string }) {
+  return (
+    <div className="flex flex-col items-center gap-0.5 md:items-start">
+      <span className="font-mono text-sm font-semibold text-foreground">{value}</span>
+      <span className="text-[11px] text-muted-foreground">{label}</span>
+    </div>
+  )
+}
+
 function HeroChat() {
   return (
-    <div className="relative">
-      <div
-        className="pointer-events-none absolute -inset-4 rounded-2xl opacity-50 blur-2xl"
-        style={{
-          background:
-            "radial-gradient(closest-side, oklch(0.8 0.15 195 / 0.25), transparent)",
-        }}
-      />
-      <div className="relative overflow-hidden rounded-2xl border border-border bg-card shadow-2xl">
-        <div className="flex items-center justify-between border-b border-border bg-muted/30 px-4 py-3">
-          <div className="flex items-center gap-2">
-            <div className="h-7 w-7 rounded-full bg-primary/15" />
-            <div>
-              <p className="font-mono text-xs font-medium">@TipSwapBot</p>
-              <p className="font-mono text-[10px] text-muted-foreground">
-                online · 4 members
-              </p>
+    <div className="overflow-hidden rounded-2xl border border-border bg-card">
+      {/* Chat header */}
+      <div className="flex items-center gap-3 border-b border-border px-5 py-3.5">
+        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary">
+          <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 2L2 7l10 5 10-5-10-5z" />
+            <path d="M2 17l10 5 10-5" />
+            <path d="M2 12l10 5 10-5" />
+          </svg>
+        </div>
+        <div className="flex-1">
+          <p className="text-sm font-medium text-foreground">TON Builders</p>
+          <p className="text-[11px] text-muted-foreground">12 members</p>
+        </div>
+      </div>
+
+      {/* Messages */}
+      <div className="flex flex-col gap-3 p-4">
+        <Bubble side="left" name="alice">
+          Great thread on liquidity routing
+        </Bubble>
+
+        <Bubble side="right" name="you" highlight>
+          /tip 5 USDT @alice
+        </Bubble>
+
+        {/* Bot confirmation card */}
+        <div className="mx-auto w-full rounded-xl border border-primary/20 bg-primary/[0.04] p-4">
+          <div className="mb-3 flex items-center gap-2">
+            <Gift className="h-3.5 w-3.5 text-primary" />
+            <span className="text-xs font-medium text-primary">TipSwap</span>
+          </div>
+          <div className="flex flex-col gap-2 text-[13px]">
+            <Row label="You send" value="2.41 TON" />
+            <Row label="alice gets" value="5.00 USDT" valueClass="text-primary font-medium" />
+            <Row label="Via" value="STON.fi" />
+            <Row label="Time" value="~5 seconds" />
+          </div>
+          <div className="mt-3 flex gap-2">
+            <div className="flex-1 rounded-lg bg-primary py-2 text-center text-xs font-medium text-primary-foreground">
+              Confirm
+            </div>
+            <div className="rounded-lg border border-border px-4 py-2 text-center text-xs text-muted-foreground">
+              Cancel
             </div>
           </div>
-          <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-            Telegram
-          </span>
         </div>
 
-        <div className="flex flex-col gap-3 p-4">
-          <ChatBubble side="left" name="alice">
-            gm — loved your thread on TON liquidity
-          </ChatBubble>
-
-          <ChatBubble side="right" name="bob" command>
-            /tip 5 USDT @alice
-          </ChatBubble>
-
-          <div className="self-end rounded-2xl rounded-br-sm border border-primary/30 bg-primary/10 p-4 text-sm">
-            <div className="mb-3 flex items-center gap-2 font-mono text-xs text-primary">
-              <Gift className="h-3.5 w-3.5" />
-              Confirm tip
-            </div>
-            <dl className="grid gap-1.5 font-mono text-xs">
-              <div className="flex justify-between gap-6">
-                <dt className="text-muted-foreground">You pay</dt>
-                <dd>2.41 TON</dd>
-              </div>
-              <div className="flex justify-between gap-6">
-                <dt className="text-muted-foreground">@alice receives</dt>
-                <dd className="text-primary">5.00 USDT</dd>
-              </div>
-              <div className="flex justify-between gap-6">
-                <dt className="text-muted-foreground">Route</dt>
-                <dd>STON.fi · Omniston</dd>
-              </div>
-              <div className="flex justify-between gap-6">
-                <dt className="text-muted-foreground">Slippage</dt>
-                <dd>1.0%</dd>
-              </div>
-            </dl>
-          </div>
-
-          <ChatBubble side="left" name="alice">
-            wait — 5 USDT just dropped in my wallet?
-          </ChatBubble>
-
-          <ChatBubble side="left" name="alice">
-            i don&apos;t even hold TON. how??
-          </ChatBubble>
-        </div>
-
-        <div className="flex items-center gap-2 border-t border-border bg-muted/20 px-4 py-3">
-          <div className="flex-1 rounded-lg border border-border bg-background/60 px-3 py-2 font-mono text-xs text-muted-foreground">
-            type a message…
-          </div>
-          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/15 text-primary">
-            <ArrowRight className="h-4 w-4" />
-          </div>
-        </div>
+        <Bubble side="left" name="alice">
+          5 USDT just hit my wallet. That was instant
+        </Bubble>
       </div>
     </div>
   )
 }
 
-function ChatBubble({
+function Row({ label, value, valueClass }: { label: string; value: string; valueClass?: string }) {
+  return (
+    <div className="flex items-center justify-between">
+      <span className="text-muted-foreground">{label}</span>
+      <span className={valueClass || "text-foreground"}>{value}</span>
+    </div>
+  )
+}
+
+function Bubble({
   side,
   name,
-  command = false,
+  highlight = false,
   children,
 }: {
   side: "left" | "right"
   name: string
-  command?: boolean
+  highlight?: boolean
   children: React.ReactNode
 }) {
   const isLeft = side === "left"
   return (
     <div className={`flex flex-col gap-1 ${isLeft ? "items-start" : "items-end"}`}>
-      <span className="px-2 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-        @{name}
+      <span className="px-1 text-[10px] font-medium text-muted-foreground">
+        {name}
       </span>
       <div
-        className={`max-w-[85%] rounded-2xl px-3.5 py-2 text-sm ${
+        className={`max-w-[80%] rounded-2xl px-3.5 py-2 text-[13px] leading-relaxed ${
           isLeft
-            ? "rounded-bl-sm bg-muted/60 text-foreground"
-            : "rounded-br-sm border border-border bg-background"
-        } ${command ? "font-mono text-primary" : ""}`}
+            ? "rounded-bl-md bg-secondary text-foreground"
+            : "rounded-br-md bg-primary/10 text-foreground"
+        } ${highlight ? "font-mono text-primary" : ""}`}
       >
         {children}
       </div>
