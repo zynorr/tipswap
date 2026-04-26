@@ -1,16 +1,10 @@
 "use client"
 
 import { useState } from "react"
-import dynamic from "next/dynamic"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ArrowRight, Check, Loader2 } from "lucide-react"
 import { motion } from "framer-motion"
-
-const CTAScene = dynamic(
-  () => import("./cta-scene").then((m) => ({ default: m.CTAScene })),
-  { ssr: false }
-)
 
 export function Waitlist() {
   const [status, setStatus] = useState<"idle" | "loading" | "done">("idle")
@@ -28,19 +22,13 @@ export function Waitlist() {
   return (
     <section id="waitlist" className="px-6 py-32">
       <motion.div
-        className="mx-auto flex w-full max-w-5xl flex-col items-center gap-10 lg:flex-row lg:justify-between"
+        className="mx-auto flex w-full max-w-lg flex-col items-center"
         initial={{ opacity: 0 }}
         whileInView={{ opacity: 1 }}
         viewport={{ once: true, margin: "-100px" }}
         transition={{ duration: 0.5 }}
       >
-        {/* 3D visual */}
-        <div className="flex items-center justify-center lg:order-2">
-          <CTAScene />
-        </div>
-
-        {/* Form side */}
-        <div className="flex max-w-md flex-col gap-6 lg:order-1">
+        <div className="flex max-w-md flex-col gap-6">
           <div className="flex flex-col gap-4 text-center lg:text-left">
             <p className="text-[13px] font-medium tracking-wide text-primary">
               Early access
