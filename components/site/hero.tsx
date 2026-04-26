@@ -1,19 +1,20 @@
 "use client"
 
+import dynamic from "next/dynamic"
 import { Button } from "@/components/ui/button"
 import { ArrowRight, Gift } from "lucide-react"
 import { motion } from "framer-motion"
 
+const HeroScene = dynamic(
+  () => import("./hero-scene").then((m) => ({ default: m.HeroScene })),
+  { ssr: false }
+)
+
 export function Hero() {
   return (
     <section className="relative flex min-h-[100dvh] flex-col items-center justify-center overflow-hidden px-6 pt-16">
-      {/* Ambient glow */}
-      <div
-        className="pointer-events-none absolute top-[-20%] left-1/2 h-[600px] w-[900px] -translate-x-1/2 opacity-[0.07]"
-        style={{
-          background: "radial-gradient(ellipse at center, oklch(0.78 0.16 190), transparent 70%)",
-        }}
-      />
+      {/* 3D background */}
+      <HeroScene />
 
       <div className="relative mx-auto flex w-full max-w-5xl flex-col items-center gap-16 md:flex-row md:items-center md:justify-between">
         {/* Left copy */}
