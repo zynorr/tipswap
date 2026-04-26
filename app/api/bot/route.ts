@@ -15,7 +15,7 @@ export async function POST(req: Request) {
     const handler = webhookCallback(getBot(), "std/http")
     return await handler(req)
   } catch (err) {
-    console.error("[v0] webhook handler error:", err)
+    console.error("[tipswap] webhook handler error:", err)
     // Telegram retries non-2xx forever — return 200 to acknowledge while we
     // log on our side. The bot.catch handler captures internal errors.
     return new Response("ok", { status: 200 })
