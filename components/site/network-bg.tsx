@@ -1,20 +1,18 @@
 "use client"
 
-import { useRef, useMemo, useCallback } from "react"
+import { useRef, useMemo } from "react"
 import { Canvas, useFrame, useThree } from "@react-three/fiber"
 import * as THREE from "three"
 
 /* ─── tuning ─── */
-const NODE_COUNT = 100
-const CONNECTION_DISTANCE = 3.5
-const SPREAD_X = 20
-const SPREAD_Y = 30
-const SPREAD_Z = 6
+const NODE_COUNT = 150
+const CONNECTION_DISTANCE = 3.2
+const SPREAD_X = 24
+const SPREAD_Y = 50
+const SPREAD_Z = 5
 const NODE_SIZE_MIN = 0.04
 const NODE_SIZE_MAX = 0.12
 const LINE_OPACITY_MAX = 0.6
-const MOUSE_RADIUS = 5
-const MOUSE_FORCE = 0.006
 const DRIFT_SPEED = 0.004
 const PULSE_SPEED = 0.8
 
@@ -174,23 +172,35 @@ function Connections({
   )
 }
 
+/* ─── scroll-linked camera ─── */
+function ScrollCamera() {
+  const { camera } = useThree()
+  const scrollRef = useRef(0)
+
+  /* listen to window scroll and map it to camera Y */
+  useFrame(() => {
+    if (typeof window === "undefined") return
+    const scrollMax = document.documentElement.scrollHeight - window.innerHeight
+    const progress = scrollMax > 0 ? window.scrollY / scrollMax : 0
+    /* lerp for smooth movement — camera travels from top to bottom of spread */
+    const targetY = (SPREAD_Y / 2) - progress * SPREAD_Y
+    scrollRef.current += (targetY - scrollRef.current) * 0.08
+    camera.position.y = scrollRef.current
+  })
+
+  return null
+}
+
 /* ─── main scene with drift + mouse ─── */
 function NetworkScene() {
   const { positions, velocities, sizes } = useNetwork(NODE_COUNT)
   const posRef = useRef(positions)
   const velRef = useRef(velocities)
-  const mouse = useRef(new THREE.Vector2(9999, 9999))
 
-  const onPointerMove = useCallback((e: { point: THREE.Vector3 }) => {
-    mouse.current.set(e.point.x, e.point.y)
-  }, [])
-
-  /* drift + wrap + mouse attract */
+  /* drift + wrap */
   useFrame(() => {
     const p = posRef.current
     const v = velRef.current
-    const mx = mouse.current.x
-    const my = mouse.current.y
 
     for (let i = 0; i < NODE_COUNT; i++) {
       p[i][0] += v[i][0]
@@ -207,27 +217,12 @@ function NetworkScene() {
       if (p[i][1] < -hy) p[i][1] = hy
       if (p[i][2] > hz) p[i][2] = -hz
       if (p[i][2] < -hz) p[i][2] = hz
-
-      // mouse attraction
-      const dx = mx - p[i][0]
-      const dy = my - p[i][1]
-      const dist = Math.sqrt(dx * dx + dy * dy)
-      if (dist < MOUSE_RADIUS && dist > 0.01) {
-        const force = MOUSE_FORCE / dist
-        p[i][0] += dx * force
-        p[i][1] += dy * force
-      }
     }
   })
 
   return (
     <>
-      {/* invisible plane to capture mouse position */}
-      <mesh position={[0, 0, 0]} onPointerMove={onPointerMove}>
-        <planeGeometry args={[60, 60]} />
-        <meshBasicMaterial transparent opacity={0} />
-      </mesh>
-
+      <ScrollCamera />
       <Nodes posRef={posRef} sizes={sizes} />
       <Connections posRef={posRef} />
     </>
@@ -236,7 +231,7 @@ function NetworkScene() {
 
 export function NetworkBackground() {
   return (
-    <div className="pointer-events-auto fixed inset-0 -z-10">
+    <div className="pointer-events-none fixed inset-0 -z-10">
       <Canvas
         camera={{ position: [0, 0, 12], fov: 60 }}
         dpr={[1, 1.5]}
