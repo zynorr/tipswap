@@ -51,7 +51,7 @@ export function getBot(): Bot {
 
       await ctx.reply(lines.join("\n"), { parse_mode: "HTML" })
     } catch (err) {
-      console.error("[v0] /start failed:", err)
+      console.error("[tipswap] /start failed:", err)
       await ctx.reply("Something went wrong setting up your wallet. Try again in a minute.")
     }
   })
@@ -98,7 +98,7 @@ export function getBot(): Bot {
         { parse_mode: "HTML" },
       )
     } catch (err) {
-      console.error("[v0] /wallet failed:", err)
+      console.error("[tipswap] /wallet failed:", err)
       await ctx.reply("Couldn't fetch your wallet. Try again shortly.")
     }
   })
@@ -129,7 +129,7 @@ export function getBot(): Bot {
       user = r.user
       wallet = r.wallet
     } catch (err) {
-      console.error("[v0] /swap user lookup failed:", err)
+      console.error("[tipswap] /swap user lookup failed:", err)
       await ctx.reply("Couldn't load your wallet. Try /start first.")
       return
     }
@@ -186,7 +186,7 @@ export function getBot(): Bot {
       }
     } catch (err) {
       const msg = (err as Error).message ?? String(err)
-      console.error("[v0] /swap failed:", err)
+      console.error("[tipswap] /swap failed:", err)
       await updateSwapStatus(log.id as string, {
         status: "failed",
         error: msg.slice(0, 300),
@@ -196,7 +196,7 @@ export function getBot(): Bot {
   })
 
   bot.catch((err) => {
-    console.error("[v0] bot.catch:", err)
+    console.error("[tipswap] bot.catch:", err)
   })
 
   _bot = bot
