@@ -8,22 +8,17 @@ import { getTonClient, getNetwork, sendInternalMessage } from "@/lib/wallet/ton"
  * STON.fi DEX v2.2 contract addresses.
  *
  * Mainnet addresses are official (https://docs.ston.fi).
- * Testnet support in DEX v2 is limited — for testing swaps end-to-end,
- * we recommend STON_NETWORK=mainnet with a small-balance hot wallet.
+ * STON.fi pools used by this bot are mainnet-only.
  */
 const ADDRESSES = {
   mainnet: {
     router: "EQBcbaDFLnQs0RaB9Aft7njJpHfXynjzo3jOoAm5IBYKYukn",
     pton: "EQBnGWMCf3-FZZq1W4IWcWiGAc3PHuZ0_H-7sad2oY00o83S",
   },
-  testnet: {
-    router: "kQALh-JBBIKK7gr0o4AVf9JZnEsFndqO0qTCyT-D-yBsWk0v",
-    pton: "kQACS30DNoUQ7NfApPvzh7eBmSZ9L4ygJ-lkNWtba8TQT-Px",
-  },
 } as const
 
 /** Common jetton minter addresses keyed by symbol. */
-export const TOKENS: Record<string, { mainnet: string; testnet?: string; decimals: number }> = {
+export const TOKENS: Record<string, { mainnet: string; decimals: number }> = {
   TON: { mainnet: "TON", decimals: 9 }, // sentinel — handled specially
   USDT: {
     mainnet: "EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs",

@@ -71,7 +71,7 @@ The migration is in `scripts/001_init_schema.sql`. It runs idempotently and crea
 | `TELEGRAM_BOT_TOKEN`              | yes      | Token from `@BotFather`                                      |
 | `TELEGRAM_WEBHOOK_SECRET`         | yes      | Random string used to verify webhook calls                   |
 | `WALLET_ENCRYPTION_KEY`           | yes      | 32+ char string used to encrypt user mnemonics at rest       |
-| `STON_NETWORK`                    | yes      | `mainnet` or `testnet`                                       |
+| `STON_NETWORK`                    | yes      | Set to `mainnet`                                              |
 | `TON_API_KEY`                     | no       | TONCenter API key for higher RPC rate limits                 |
 | `SUPABASE_URL`                    | yes      | Set by the Supabase integration                              |
 | `SUPABASE_SERVICE_ROLE_KEY`       | yes      | Set by the Supabase integration                              |
@@ -107,7 +107,7 @@ The landing page works out of the box. To exercise the bot, you need a publicly 
 
 Supported tokens: `TON`, `USDT`, `STON`, `NOT`. Slippage defaults to 1%.
 
-> Note: STON.fi DEX v2 pools live on mainnet only. Set `STON_NETWORK=mainnet` to enable real `/swap` execution. On testnet, `/start`, `/wallet`, and `/help` work; `/swap` will fail because the pools do not exist there.
+> Note: STON.fi DEX v2 pools live on mainnet only. Keep `STON_NETWORK=mainnet` in every environment.
 
 ---
 

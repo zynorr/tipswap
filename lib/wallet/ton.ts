@@ -5,14 +5,12 @@ import { Address, type Cell } from "@ton/core"
 
 const ENDPOINTS = {
   mainnet: "https://toncenter.com/api/v2/jsonRPC",
-  testnet: "https://testnet.toncenter.com/api/v2/jsonRPC",
 } as const
 
 export type TonNetwork = keyof typeof ENDPOINTS
 
 export function getNetwork(): TonNetwork {
-  const v = (process.env.STON_NETWORK ?? "testnet").toLowerCase()
-  return v === "mainnet" ? "mainnet" : "testnet"
+  return "mainnet"
 }
 
 export function getTonClient(network: TonNetwork = getNetwork()) {
@@ -32,7 +30,7 @@ export async function generateNewWallet() {
   return {
     mnemonic: mnemonic.join(" "),
     publicKey: keypair.publicKey.toString("hex"),
-    address: wallet.address.toString({ bounceable: false, testOnly: getNetwork() === "testnet" }),
+    address: wallet.address.toString({ bounceable: false, testOnly: false }),
   }
 }
 
