@@ -4,7 +4,7 @@ A Telegram bot that lets users tip each other in any TON-based token. The sender
 
 This repository contains:
 
-- A marketing landing page with a 3D animated background, built with Next.js, Tailwind CSS, and React Three Fiber.
+- A marketing landing page
 - A Telegram bot (grammY) that creates a managed TON wallet for each user and executes real on-chain swaps via the STON.fi DEX v2 SDK.
 - An admin dashboard for registering the Telegram webhook and inspecting bot status.
 - A Supabase-backed data layer for users, wallets, swaps, and waitlist signups.
@@ -93,17 +93,6 @@ Open [http://localhost:3000](http://localhost:3000).
 
 The landing page works out of the box. To exercise the bot, you need a publicly reachable URL so Telegram can deliver webhook events. Use a tunnel (for example `ngrok http 3000`) and point your bot at the tunnel URL.
 
----
-
-## Deployment
-
-This project deploys to Vercel as a standard Next.js app.
-
-1. Push to your default branch (Vercel auto-deploys).
-2. Confirm all environment variables in the Vercel dashboard.
-3. Run the migration in `scripts/001_init_schema.sql` against your Supabase project (one time).
-4. Visit `https://<your-domain>/admin/setup`, paste the public URL, and click **Set webhook**. This registers the webhook with Telegram.
-5. Open the bot in Telegram and send `/start`.
 
 ---
 
