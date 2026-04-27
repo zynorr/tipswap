@@ -18,6 +18,27 @@ function isRateLimitError(err: unknown) {
   return message.includes("429") || message.toLowerCase().includes("too many requests")
 }
 
+function mapTonRpcError(err: unknown, context: string): Error {
+  const message = err instanceof Error ? err.message : String(err)
+
+  if (message.includes("status code 500")) {
+    return new Error(
+      `TON RPC internal error during ${context}. Retry in 20-30s; if it persists, verify TON_API_KEY is set in Vercel.`,
+    )
+  }
+  if (message.includes("status code 403")) {
+    return new Error(
+      `TON RPC access denied during ${context}. Check TON_API_KEY and endpoint access.`,
+    )
+  }
+  if (isRateLimitError(err)) {
+    return new Error(
+      `TON RPC rate limited during ${context}. Retry shortly and ensure TON_API_KEY is configured.`,
+    )
+  }
+  return err instanceof Error ? err : new Error(message)
+}
+
 async function withRateLimitRetry<T>(
   fn: () => Promise<T>,
   options: { retries?: number; baseDelayMs?: number } = {},
@@ -74,10 +95,14 @@ export async function deriveWalletFromMnemonic(mnemonic: string) {
 
 export async function getBalance(address: string) {
   const client = getTonClient()
-  const balance = await withRateLimitRetry(() =>
-    client.getBalance(Address.parse(address)),
-  )
-  return balance // bigint, in nanotons
+  try {
+    const balance = await withRateLimitRetry(() =>
+      client.getBalance(Address.parse(address)),
+    )
+    return balance // bigint, in nanotons
+  } catch (err) {
+    throw mapTonRpcError(err, "balance fetch")
+  }
 }
 
 /**
@@ -91,38 +116,42 @@ export async function sendInternalMessage(params: {
   body?: Cell
   bounce?: boolean
 }) {
-  const { wallet, keypair } = await deriveWalletFromMnemonic(params.mnemonic)
-  const client = getTonClient()
-  const contract = client.open(wallet)
+  try {
+    const { wallet, keypair } = await deriveWalletFromMnemonic(params.mnemonic)
+    const client = getTonClient()
+    const contract = client.open(wallet)
 
-  const seqno = await withRateLimitRetry(() => contract.getSeqno())
+    const seqno = await withRateLimitRetry(() => contract.getSeqno())
 
-  const transfer = await contract.createTransfer({
-    secretKey: keypair.secretKey,
-    seqno,
-    sendMode: SendMode.PAY_GAS_SEPARATELY + SendMode.IGNORE_ERRORS,
-    messages: [
-      internal({
-        to: typeof params.to === "string" ? Address.parse(params.to) : params.to,
-        value: params.value,
-        body: params.body,
-        bounce: params.bounce ?? false,
-      }),
-    ],
-  })
+    const transfer = await contract.createTransfer({
+      secretKey: keypair.secretKey,
+      seqno,
+      sendMode: SendMode.PAY_GAS_SEPARATELY + SendMode.IGNORE_ERRORS,
+      messages: [
+        internal({
+          to: typeof params.to === "string" ? Address.parse(params.to) : params.to,
+          value: params.value,
+          body: params.body,
+          bounce: params.bounce ?? false,
+        }),
+      ],
+    })
 
-  await withRateLimitRetry(() => contract.send(transfer))
+    await withRateLimitRetry(() => contract.send(transfer))
 
-  // Wait for seqno to advance — that confirms the wallet processed the tx
-  let attempts = 0
-  while (attempts < 30) {
-    await new Promise((r) => setTimeout(r, 2000))
-    const newSeqno = await withRateLimitRetry(() => contract.getSeqno())
-    if (newSeqno > seqno) {
-      return { sent: true, seqno: newSeqno }
+    // Wait for seqno to advance — that confirms the wallet processed the tx
+    let attempts = 0
+    while (attempts < 30) {
+      await new Promise((r) => setTimeout(r, 2000))
+      const newSeqno = await withRateLimitRetry(() => contract.getSeqno())
+      if (newSeqno > seqno) {
+        return { sent: true, seqno: newSeqno }
+      }
+      attempts++
     }
-    attempts++
-  }
 
-  return { sent: false, seqno }
+    return { sent: false, seqno }
+  } catch (err) {
+    throw mapTonRpcError(err, "swap transaction broadcast")
+  }
 }

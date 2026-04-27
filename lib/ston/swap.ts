@@ -2,7 +2,7 @@ import "server-only"
 import { Address, toNano } from "@ton/core"
 import { pTON } from "@ston-fi/sdk"
 import { CPIRouterV2_2 } from "@ston-fi/sdk/dex/v2_2"
-import { getTonClient, getNetwork, sendInternalMessage } from "@/lib/wallet/ton"
+import { getBalance, getTonClient, getNetwork, sendInternalMessage } from "@/lib/wallet/ton"
 
 /**
  * STON.fi DEX v2.2 contract addresses.
@@ -16,6 +16,13 @@ const ADDRESSES = {
     pton: "EQBnGWMCf3-FZZq1W4IWcWiGAc3PHuZ0_H-7sad2oY00o83S",
   },
 } as const
+
+export class SwapUserError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = "SwapUserError"
+  }
+}
 
 /** Common jetton minter addresses keyed by symbol. */
 export const TOKENS: Record<string, { mainnet: string; decimals: number }> = {
@@ -64,6 +71,21 @@ function toRawAmount(amount: string, decimals: number) {
   return BigInt(whole + padded)
 }
 
+function requiredTonForSwap(offerSymbol: string, offerRaw: bigint) {
+  const gas = offerSymbol === "TON" ? toNano("0.25") : toNano("0.3")
+  const buffer = toNano("0.05")
+  const offerPart = offerSymbol === "TON" ? offerRaw : 0n
+  return offerPart + gas + buffer
+}
+
+function formatTon(amountNano: bigint) {
+  const sign = amountNano < 0n ? "-" : ""
+  const abs = amountNano < 0n ? -amountNano : amountNano
+  const whole = abs / 1_000_000_000n
+  const frac = (abs % 1_000_000_000n).toString().padStart(9, "0").slice(0, 4)
+  return `${sign}${whole.toString()}.${frac}`
+}
+
 /**
  * Build and broadcast a STON.fi swap from the provided wallet.
  * Returns the seqno-confirmation result from sendInternalMessage.
@@ -83,6 +105,15 @@ export async function executeSwap(params: SwapParams) {
 
   const offerRaw = toRawAmount(params.offerAmount, offer.decimals)
   const minAskAmount = params.minAskAmount ?? 1n // permissive default for M1; production should compute via quote
+
+  // Preflight: for any swap we need TON for gas; for TON offers we need offer+gas.
+  const tonBalance = await getBalance(params.userAddress)
+  const tonNeeded = requiredTonForSwap(offer.symbol, offerRaw)
+  if (tonBalance < tonNeeded) {
+    throw new SwapUserError(
+      `Insufficient TON balance. Need about ${formatTon(tonNeeded)} TON, but wallet has ${formatTon(tonBalance)} TON.`,
+    )
+  }
 
   let txParams: { to: Address; value: bigint; body: import("@ton/core").Cell }
 
@@ -116,9 +147,18 @@ export async function executeSwap(params: SwapParams) {
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
+    if (
+      message.toLowerCase().includes("insufficient") ||
+      message.toLowerCase().includes("not enough") ||
+      message.toLowerCase().includes("low balance")
+    ) {
+      throw new SwapUserError(
+        "Insufficient balance for this swap. Top up wallet and try a smaller amount.",
+      )
+    }
     if (message.includes("status code 500")) {
-      throw new Error(
-        "Swap route/provider error (500). Try TON/USDT or TON/STON, reduce amount, and retry in 20-30s.",
+      throw new SwapUserError(
+        "Swap route unavailable right now. Try TON/USDT or TON/STON, reduce amount, and retry in 20-30s.",
       )
     }
     throw err
