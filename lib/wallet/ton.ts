@@ -11,8 +11,20 @@ const ENDPOINTS = {
 export type TonNetwork = keyof typeof ENDPOINTS
 
 export function getNetwork(): TonNetwork {
-  const v = (process.env.STON_NETWORK ?? "testnet").toLowerCase()
-  return v === "mainnet" ? "mainnet" : "testnet"
+  // Default to mainnet for production safety. STON.fi only has liquidity on mainnet,
+  // so testnet is opt-in for development only.
+  const v = (process.env.STON_NETWORK ?? "mainnet").toLowerCase()
+  return v === "testnet" ? "testnet" : "mainnet"
+}
+
+/**
+ * Format an address as a user-friendly string for the active network.
+ * On mainnet we use the non-bounceable UQ-prefix form, which is what
+ * Tonkeeper / Tonhub display and what users paste when topping up wallets.
+ */
+export function formatAddress(addr: string | Address, network: TonNetwork = getNetwork()) {
+  const a = typeof addr === "string" ? Address.parse(addr) : addr
+  return a.toString({ bounceable: false, testOnly: network === "testnet" })
 }
 
 export function getTonClient(network: TonNetwork = getNetwork()) {
@@ -32,7 +44,7 @@ export async function generateNewWallet() {
   return {
     mnemonic: mnemonic.join(" "),
     publicKey: keypair.publicKey.toString("hex"),
-    address: wallet.address.toString({ bounceable: false, testOnly: getNetwork() === "testnet" }),
+    address: formatAddress(wallet.address),
   }
 }
 
