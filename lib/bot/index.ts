@@ -2,7 +2,7 @@ import "server-only"
 import { Bot } from "grammy"
 import { getOrCreateUser, decryptMnemonic, logSwap, updateSwapStatus, type TgWallet } from "./users"
 import { getBalance, getNetwork } from "@/lib/wallet/ton"
-import { executeSwap, resolveToken } from "@/lib/ston/swap"
+import { executeSwap, resolveToken, TOKENS } from "@/lib/ston/swap"
 import { fromNano } from "@ton/core"
 
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN
@@ -138,7 +138,9 @@ export function getBot(): Bot {
       resolveToken(offer)
       resolveToken(ask)
     } catch (err) {
-      await ctx.reply(`${(err as Error).message}\nSupported: TON, USDT, STON, NOT`)
+      await ctx.reply(
+        `${(err as Error).message}\nSupported: ${Object.keys(TOKENS).join(", ")}`,
+      )
       return
     }
 

@@ -28,16 +28,16 @@ export const TOKENS: Record<string, { mainnet: string; decimals: number }> = {
     mainnet: "EQA2kCVNwVsil2EM2mB0SkXytxCqQjS4mttjDpnXmwG9T6bO",
     decimals: 9,
   },
-  NOT: {
-    mainnet: "EQAvlWFDxGF2lXm67y4yzC17wYKD9A0guwPkMs1gOsM__NOT",
-    decimals: 9,
-  },
 }
 
 export function resolveToken(symbol: string) {
   const upper = symbol.toUpperCase()
   const entry = TOKENS[upper]
-  if (!entry) throw new Error(`Unknown token: ${symbol}`)
+  if (!entry) {
+    throw new Error(
+      `Unknown token: ${symbol}. Supported: ${Object.keys(TOKENS).join(", ")}`,
+    )
+  }
   return { symbol: upper, ...entry }
 }
 
@@ -86,32 +86,42 @@ export async function executeSwap(params: SwapParams) {
 
   let txParams: { to: Address; value: bigint; body: import("@ton/core").Cell }
 
-  if (offer.symbol === "TON" && ask.symbol !== "TON") {
-    txParams = await router.getSwapTonToJettonTxParams({
-      userWalletAddress: params.userAddress,
-      proxyTon,
-      askJettonAddress: ask.mainnet,
-      offerAmount: offerRaw,
-      minAskAmount,
-    })
-  } else if (offer.symbol !== "TON" && ask.symbol === "TON") {
-    txParams = await router.getSwapJettonToTonTxParams({
-      userWalletAddress: params.userAddress,
-      proxyTon,
-      offerJettonAddress: offer.mainnet,
-      offerAmount: offerRaw,
-      minAskAmount,
-    })
-  } else if (offer.symbol !== "TON" && ask.symbol !== "TON") {
-    txParams = await router.getSwapJettonToJettonTxParams({
-      userWalletAddress: params.userAddress,
-      offerJettonAddress: offer.mainnet,
-      askJettonAddress: ask.mainnet,
-      offerAmount: offerRaw,
-      minAskAmount,
-    })
-  } else {
-    throw new Error("Cannot swap a token to itself")
+  try {
+    if (offer.symbol === "TON" && ask.symbol !== "TON") {
+      txParams = await router.getSwapTonToJettonTxParams({
+        userWalletAddress: params.userAddress,
+        proxyTon,
+        askJettonAddress: ask.mainnet,
+        offerAmount: offerRaw,
+        minAskAmount,
+      })
+    } else if (offer.symbol !== "TON" && ask.symbol === "TON") {
+      txParams = await router.getSwapJettonToTonTxParams({
+        userWalletAddress: params.userAddress,
+        proxyTon,
+        offerJettonAddress: offer.mainnet,
+        offerAmount: offerRaw,
+        minAskAmount,
+      })
+    } else if (offer.symbol !== "TON" && ask.symbol !== "TON") {
+      txParams = await router.getSwapJettonToJettonTxParams({
+        userWalletAddress: params.userAddress,
+        offerJettonAddress: offer.mainnet,
+        askJettonAddress: ask.mainnet,
+        offerAmount: offerRaw,
+        minAskAmount,
+      })
+    } else {
+      throw new Error("Cannot swap a token to itself")
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    if (message.includes("status code 500")) {
+      throw new Error(
+        "Swap route/provider error (500). Try TON/USDT or TON/STON, reduce amount, and retry in 20-30s.",
+      )
+    }
+    throw err
   }
 
   const result = await sendInternalMessage({
