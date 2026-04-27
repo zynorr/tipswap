@@ -5,22 +5,23 @@ import { CPIRouterV2_2 } from "@ston-fi/sdk/dex/v2_2"
 import { getTonClient, getNetwork, sendInternalMessage } from "@/lib/wallet/ton"
 
 /**
- * STON.fi DEX v2.2 contract addresses.
+ * STON.fi DEX v2.2 contract addresses (mainnet only).
  *
- * Mainnet addresses are official (https://docs.ston.fi).
- * Testnet support in DEX v2 is limited — for testing swaps end-to-end,
- * we recommend STON_NETWORK=mainnet with a small-balance hot wallet.
+ * STON.fi does not deploy DEX v2 contracts to TON testnet. To execute real
+ * swaps the bot must run with STON_NETWORK=mainnet and a funded hot wallet.
+ * Source: https://docs.ston.fi
  */
-const ADDRESSES = {
-  mainnet: {
-    router: "EQBcbaDFLnQs0RaB9Aft7njJpHfXynjzo3jOoAm5IBYKYukn",
-    pton: "EQBnGWMCf3-FZZq1W4IWcWiGAc3PHuZ0_H-7sad2oY00o83S",
-  },
-  testnet: {
-    router: "kQALh-JBBIKK7gr0o4AVf9JZnEsFndqO0qTCyT-D-yBsWk0v",
-    pton: "kQACS30DNoUQ7NfApPvzh7eBmSZ9L4ygJ-lkNWtba8TQT-Px",
-  },
+const MAINNET_ADDRESSES = {
+  router: "EQBcbaDFLnQs0RaB9Aft7njJpHfXynjzo3jOoAm5IBYKYukn",
+  pton: "EQBnGWMCf3-FZZq1W4IWcWiGAc3PHuZ0_H-7sad2oY00o83S",
 } as const
+
+export class SwapNetworkError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = "SwapNetworkError"
+  }
+}
 
 /** Common jetton minter addresses keyed by symbol. */
 export const TOKENS: Record<string, { mainnet: string; testnet?: string; decimals: number }> = {
@@ -75,13 +76,17 @@ function toRawAmount(amount: string, decimals: number) {
  */
 export async function executeSwap(params: SwapParams) {
   const network = getNetwork()
-  const addrs = ADDRESSES[network]
+  if (network !== "mainnet") {
+    throw new SwapNetworkError(
+      "STON.fi DEX is mainnet-only. Set STON_NETWORK=mainnet on the server and fund the wallet with real TON to run swaps.",
+    )
+  }
   const client = getTonClient(network)
 
   const router = client.open(
-    CPIRouterV2_2.create(Address.parse(addrs.router)),
+    CPIRouterV2_2.create(Address.parse(MAINNET_ADDRESSES.router)),
   )
-  const proxyTon = pTON.v2_1.create(Address.parse(addrs.pton))
+  const proxyTon = pTON.v2_1.create(Address.parse(MAINNET_ADDRESSES.pton))
 
   const offer = resolveToken(params.offer)
   const ask = resolveToken(params.ask)

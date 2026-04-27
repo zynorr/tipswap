@@ -2,7 +2,7 @@ import "server-only"
 import { Bot } from "grammy"
 import { getOrCreateUser, decryptMnemonic, logSwap, updateSwapStatus, type TgWallet } from "./users"
 import { getBalance, getNetwork } from "@/lib/wallet/ton"
-import { executeSwap, resolveToken } from "@/lib/ston/swap"
+import { executeSwap, resolveToken, SwapNetworkError } from "@/lib/ston/swap"
 import { fromNano } from "@ton/core"
 
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN
@@ -191,6 +191,34 @@ export function getBot(): Bot {
         status: "failed",
         error: msg.slice(0, 300),
       })
+
+      if (err instanceof SwapNetworkError) {
+        await ctx.reply(
+          [
+            "<b>Swaps require mainnet.</b>",
+            "STON.fi DEX is only deployed on TON mainnet — testnet has no liquidity.",
+            "",
+            "Ask the operator to set <code>STON_NETWORK=mainnet</code> and fund the bot wallet with real TON.",
+          ].join("\n"),
+          { parse_mode: "HTML" },
+        )
+        return
+      }
+
+      // Friendlier message for the most common SDK quote-fetch failure
+      if (/exit_code: -13/i.test(msg) || /Unable to execute get method/i.test(msg)) {
+        await ctx.reply(
+          [
+            "<b>Couldn't fetch a quote for that pair.</b>",
+            "Either the pool doesn't exist on STON.fi, or the network is misconfigured.",
+            "",
+            "Try a major pair like <code>/swap 0.1 TON USDT</code> on mainnet.",
+          ].join("\n"),
+          { parse_mode: "HTML" },
+        )
+        return
+      }
+
       await ctx.reply(`Swap failed: ${msg}`)
     }
   })
