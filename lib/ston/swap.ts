@@ -54,6 +54,16 @@ export const TOKENS: Record<string, { address: string; decimals: number; display
     decimals: 9,
     display: "DOGS",
   },
+  HMSTR: {
+    address: "EQAJ8uWd7EBqsmpSWaRdf_I-8R8-XHwh3gsNKhy-UrdrPcUo",
+    decimals: 9,
+    display: "HMSTR",
+  },
+  CATI: {
+    address: "EQD-cvR0Nz6XAyRBvbhz-abTrRC6sI5tvHvvpeQraV9UAAD7",
+    decimals: 9,
+    display: "CATI",
+  },
 }
 
 export type Token = (typeof TOKENS)[string] & { symbol: string }
