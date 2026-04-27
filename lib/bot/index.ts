@@ -1,13 +1,30 @@
 import "server-only"
 import { Bot } from "grammy"
-import { getOrCreateUser, decryptMnemonic, logSwap, updateSwapStatus, type TgWallet } from "./users"
-import { getBalance, getNetwork } from "@/lib/wallet/ton"
-import { executeSwap, resolveToken, SwapNetworkError } from "@/lib/ston/swap"
 import { fromNano } from "@ton/core"
+import {
+  getOrCreateUser,
+  decryptMnemonic,
+  logSwap,
+  updateSwapStatus,
+  type TgWallet,
+} from "./users"
+import { getBalance, getNetwork } from "@/lib/wallet/ton"
+import {
+  executeSwap,
+  quoteSwap,
+  resolveToken,
+  assertSufficientTon,
+  TOKENS,
+  SwapNetworkError,
+  InsufficientFundsError,
+  QuoteError,
+} from "@/lib/ston/swap"
 
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN
 
 let _bot: Bot | null = null
+
+const SUPPORTED_LIST = Object.keys(TOKENS).join(", ")
 
 export function getBot(): Bot {
   if (_bot) return _bot
@@ -35,18 +52,17 @@ export function getBot(): Bot {
             "",
             `Network: <b>${getNetwork()}</b>`,
             "",
-            "Top it up, then try:",
-            "<code>/swap 0.1 TON USDT</code>",
+            "Top it up with at least <b>0.5 TON</b>, then try:",
+            "<code>/quote 0.1 TON USDT</code> — preview a swap",
+            "<code>/swap 0.1 TON USDT</code>  — execute it",
             "",
-            "Other commands:",
-            "/wallet — show address &amp; balance",
-            "/help — full command list",
+            "Other commands: /wallet, /help",
           ]
         : [
             `Welcome back, ${user.first_name ?? "friend"}.`,
             "",
             `Wallet: <code>${wallet.address}</code>`,
-            "Try /wallet, /swap, or /help.",
+            "Try /wallet, /quote, /swap, or /help.",
           ]
 
       await ctx.reply(lines.join("\n"), { parse_mode: "HTML" })
@@ -63,10 +79,13 @@ export function getBot(): Bot {
         "",
         "/start — register and get a wallet",
         "/wallet — show your address and TON balance",
-        "/swap &lt;amount&gt; &lt;from&gt; &lt;to&gt; — swap one token for another",
+        "/quote &lt;amount&gt; &lt;from&gt; &lt;to&gt; — preview a swap (no broadcast)",
+        "  example: <code>/quote 0.5 TON USDT</code>",
+        "/swap &lt;amount&gt; &lt;from&gt; &lt;to&gt; — execute a swap",
         "  example: <code>/swap 0.5 TON USDT</code>",
         "",
-        `Currently on <b>${getNetwork()}</b>.`,
+        `Supported tokens: ${SUPPORTED_LIST}`,
+        `Network: <b>${getNetwork()}</b>`,
       ].join("\n"),
       { parse_mode: "HTML" },
     )
@@ -94,6 +113,8 @@ export function getBot(): Bot {
           `Balance: <b>${ton} TON</b>`,
           `Network: ${getNetwork()}`,
           `Default receive token: ${user.default_recv_token}`,
+          "",
+          "Send TON to this address to fund swaps. ~0.3 TON of gas is reserved per swap.",
         ].join("\n"),
         { parse_mode: "HTML" },
       )
@@ -103,13 +124,51 @@ export function getBot(): Bot {
     }
   })
 
+  bot.command("quote", async (ctx) => {
+    const args = ctx.match?.toString().trim().split(/\s+/) ?? []
+    if (args.length !== 3) {
+      await ctx.reply(
+        "Usage: /quote <amount> <from> <to>\nexample: /quote 0.1 TON USDT",
+      )
+      return
+    }
+    const [amountStr, offer, ask] = args
+
+    if (!/^\d+(\.\d+)?$/.test(amountStr)) {
+      await ctx.reply("Amount must be a number. Example: 0.5")
+      return
+    }
+
+    try {
+      resolveToken(offer)
+      resolveToken(ask)
+    } catch (err) {
+      await ctx.reply(`${(err as Error).message}\nSupported: ${SUPPORTED_LIST}`)
+      return
+    }
+
+    try {
+      const q = await quoteSwap({
+        offer,
+        ask,
+        offerAmount: amountStr,
+        slippageBps: 100,
+      })
+      await ctx.reply(formatQuoteMessage(q), { parse_mode: "HTML" })
+    } catch (err) {
+      await ctx.reply(formatSwapError(err))
+    }
+  })
+
   bot.command("swap", async (ctx) => {
     const tgUser = ctx.from
     if (!tgUser) return
 
     const args = ctx.match?.toString().trim().split(/\s+/) ?? []
     if (args.length !== 3) {
-      await ctx.reply("Usage: /swap <amount> <from> <to>\nexample: /swap 0.1 TON USDT")
+      await ctx.reply(
+        "Usage: /swap <amount> <from> <to>\nexample: /swap 0.1 TON USDT",
+      )
       return
     }
     const [amountStr, offer, ask] = args
@@ -138,21 +197,53 @@ export function getBot(): Bot {
       resolveToken(offer)
       resolveToken(ask)
     } catch (err) {
-      await ctx.reply(`${(err as Error).message}\nSupported: TON, USDT, STON, NOT`)
+      await ctx.reply(`${(err as Error).message}\nSupported: ${SUPPORTED_LIST}`)
       return
     }
 
+    // 1. Get a quote so we know expected output and the right router
+    let quote
+    try {
+      quote = await quoteSwap({
+        offer,
+        ask,
+        offerAmount: amountStr,
+        slippageBps: 100,
+      })
+    } catch (err) {
+      await ctx.reply(formatSwapError(err))
+      return
+    }
+
+    // 2. Pre-flight balance check
+    try {
+      const balance = await getBalance(wallet.address)
+      assertSufficientTon({
+        balance,
+        offerSymbol: quote.offer.symbol,
+        offerUnits: quote.offerUnits,
+      })
+    } catch (err) {
+      await ctx.reply(formatSwapError(err))
+      return
+    }
+
+    // 3. Log the pending swap, broadcast, update.
     const log = await logSwap({
       userId: user.id,
-      offer: offer.toUpperCase(),
-      ask: ask.toUpperCase(),
+      offer: quote.offer.symbol,
+      ask: quote.ask.symbol,
       offerAmount: amountStr,
       slippageBps: 100,
       status: "pending",
     })
 
     await ctx.reply(
-      `Swapping <b>${amountStr} ${offer.toUpperCase()}</b> → <b>${ask.toUpperCase()}</b>...\nThis can take 10–30 seconds.`,
+      [
+        formatQuoteMessage(quote),
+        "",
+        "<i>Broadcasting now... 10–30 seconds.</i>",
+      ].join("\n"),
       { parse_mode: "HTML" },
     )
 
@@ -161,10 +252,7 @@ export function getBot(): Bot {
       const result = await executeSwap({
         mnemonic,
         userAddress: wallet.address,
-        offer,
-        ask,
-        offerAmount: amountStr,
-        slippageBps: 100,
+        quote,
       })
 
       await updateSwapStatus(log.id as string, {
@@ -175,14 +263,19 @@ export function getBot(): Bot {
       if (result.sent) {
         await ctx.reply(
           [
-            `Swap broadcast on <b>${result.network}</b>.`,
-            `Seqno: ${result.seqno}`,
-            "Track confirmations on tonviewer.com (paste your wallet address).",
+            `<b>Swap broadcast on ${result.network}.</b>`,
+            `Expected: ~${result.expectedOut} ${quote.ask.symbol}`,
+            `Min received: ${result.minOut} ${quote.ask.symbol}`,
+            `Wallet seqno: ${result.seqno}`,
+            "",
+            `Track on tonviewer.com/${wallet.address}`,
           ].join("\n"),
           { parse_mode: "HTML" },
         )
       } else {
-        await ctx.reply("Swap was broadcast but didn't confirm in time. Check your wallet shortly.")
+        await ctx.reply(
+          "Swap was sent but the wallet didn't confirm in time. Check your address on tonviewer.com shortly — it may still land.",
+        )
       }
     } catch (err) {
       const msg = (err as Error).message ?? String(err)
@@ -191,35 +284,7 @@ export function getBot(): Bot {
         status: "failed",
         error: msg.slice(0, 300),
       })
-
-      if (err instanceof SwapNetworkError) {
-        await ctx.reply(
-          [
-            "<b>Swaps require mainnet.</b>",
-            "STON.fi DEX is only deployed on TON mainnet — testnet has no liquidity.",
-            "",
-            "Ask the operator to set <code>STON_NETWORK=mainnet</code> and fund the bot wallet with real TON.",
-          ].join("\n"),
-          { parse_mode: "HTML" },
-        )
-        return
-      }
-
-      // Friendlier message for the most common SDK quote-fetch failure
-      if (/exit_code: -13/i.test(msg) || /Unable to execute get method/i.test(msg)) {
-        await ctx.reply(
-          [
-            "<b>Couldn't fetch a quote for that pair.</b>",
-            "Either the pool doesn't exist on STON.fi, or the network is misconfigured.",
-            "",
-            "Try a major pair like <code>/swap 0.1 TON USDT</code> on mainnet.",
-          ].join("\n"),
-          { parse_mode: "HTML" },
-        )
-        return
-      }
-
-      await ctx.reply(`Swap failed: ${msg}`)
+      await ctx.reply(formatSwapError(err))
     }
   })
 
@@ -229,4 +294,57 @@ export function getBot(): Bot {
 
   _bot = bot
   return bot
+}
+
+function formatQuoteMessage(q: Awaited<ReturnType<typeof quoteSwap>>) {
+  const impactPct = (Number(q.priceImpact) * 100).toFixed(3)
+  const feePct = (Number(q.feePercent) * 100).toFixed(3)
+  return [
+    `<b>${q.offerAmount} ${q.offer.symbol} → ~${q.askFormatted} ${q.ask.symbol}</b>`,
+    `Min received (1% slippage): ${q.minAskFormatted} ${q.ask.symbol}`,
+    `Rate: 1 ${q.offer.symbol} = ${q.swapRate} ${q.ask.symbol}`,
+    `Price impact: ${impactPct}% · Pool fee: ${feePct}%`,
+    `Routed via STON.fi (pTON v${q.ptonVersion})`,
+  ].join("\n")
+}
+
+function formatSwapError(err: unknown): string {
+  if (err instanceof SwapNetworkError) {
+    return [
+      "<b>Swaps require mainnet.</b>",
+      "STON.fi DEX is only deployed on TON mainnet — testnet has no liquidity.",
+      "",
+      "Operator: set <code>STON_NETWORK=mainnet</code> on the server and redeploy.",
+    ].join("\n")
+  }
+
+  if (err instanceof InsufficientFundsError) {
+    return [
+      "<b>Not enough TON to cover swap + gas.</b>",
+      err.message,
+      "",
+      "Send more TON to your wallet (run /wallet to see the address) and try again.",
+    ].join("\n")
+  }
+
+  if (err instanceof QuoteError) {
+    return [
+      "<b>STON.fi couldn't quote that pair right now.</b>",
+      err.message,
+      "",
+      "Common causes: pair has no pool, or amount is below the pool minimum. Try a major pair like TON / USDT.",
+    ].join("\n")
+  }
+
+  const msg = (err as Error)?.message ?? String(err)
+  if (/exit_code: -13/i.test(msg) || /Unable to execute get method/i.test(msg)) {
+    return [
+      "<b>The router contract didn't respond.</b>",
+      "Usually means the network is misconfigured or the pool no longer exists.",
+      "",
+      "Try a different pair, or contact the operator.",
+    ].join("\n")
+  }
+
+  return `Swap failed: ${msg}`
 }
