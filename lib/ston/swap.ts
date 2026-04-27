@@ -12,7 +12,7 @@ import { getTonClient, getNetwork, sendInternalMessage } from "@/lib/wallet/ton"
  */
 const ADDRESSES = {
   mainnet: {
-    router: "EQBcbaDFLnQs0RaB9Aft7njJpHfXynjzo3jOoAm5IBYKYukn",
+    router: "EQD11suHkrO_1Mb5IIdYFx5ZPy38MuHoeHx6dA-QRaD8w0UJ",
     pton: "EQBnGWMCf3-FZZq1W4IWcWiGAc3PHuZ0_H-7sad2oY00o83S",
   },
 } as const
