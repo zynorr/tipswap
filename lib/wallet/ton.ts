@@ -13,6 +13,33 @@ export function getNetwork(): TonNetwork {
   return "mainnet"
 }
 
+function isRateLimitError(err: unknown) {
+  const message = err instanceof Error ? err.message : String(err)
+  return message.includes("429") || message.toLowerCase().includes("too many requests")
+}
+
+async function withRateLimitRetry<T>(
+  fn: () => Promise<T>,
+  options: { retries?: number; baseDelayMs?: number } = {},
+): Promise<T> {
+  const retries = options.retries ?? 5
+  const baseDelayMs = options.baseDelayMs ?? 600
+
+  let attempt = 0
+  while (true) {
+    try {
+      return await fn()
+    } catch (err) {
+      if (!isRateLimitError(err) || attempt >= retries) {
+        throw err
+      }
+      const delay = baseDelayMs * Math.pow(2, attempt)
+      await new Promise((r) => setTimeout(r, delay))
+      attempt++
+    }
+  }
+}
+
 export function getTonClient(network: TonNetwork = getNetwork()) {
   return new TonClient({
     endpoint: ENDPOINTS[network],
@@ -47,7 +74,9 @@ export async function deriveWalletFromMnemonic(mnemonic: string) {
 
 export async function getBalance(address: string) {
   const client = getTonClient()
-  const balance = await client.getBalance(Address.parse(address))
+  const balance = await withRateLimitRetry(() =>
+    client.getBalance(Address.parse(address)),
+  )
   return balance // bigint, in nanotons
 }
 
@@ -66,7 +95,7 @@ export async function sendInternalMessage(params: {
   const client = getTonClient()
   const contract = client.open(wallet)
 
-  const seqno = await contract.getSeqno()
+  const seqno = await withRateLimitRetry(() => contract.getSeqno())
 
   const transfer = await contract.createTransfer({
     secretKey: keypair.secretKey,
@@ -82,13 +111,13 @@ export async function sendInternalMessage(params: {
     ],
   })
 
-  await contract.send(transfer)
+  await withRateLimitRetry(() => contract.send(transfer))
 
   // Wait for seqno to advance — that confirms the wallet processed the tx
   let attempts = 0
   while (attempts < 30) {
     await new Promise((r) => setTimeout(r, 2000))
-    const newSeqno = await contract.getSeqno()
+    const newSeqno = await withRateLimitRetry(() => contract.getSeqno())
     if (newSeqno > seqno) {
       return { sent: true, seqno: newSeqno }
     }
