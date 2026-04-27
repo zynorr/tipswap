@@ -29,13 +29,13 @@ export async function POST(req: Request) {
       if (error.code === "23505") {
         return NextResponse.json({ ok: true, alreadySubscribed: true })
       }
-      console.error("[v0] waitlist insert error:", error)
+      console.error("[tipswap] waitlist insert error:", error)
       return NextResponse.json({ error: "Could not save signup" }, { status: 500 })
     }
 
     return NextResponse.json({ ok: true })
   } catch (err) {
-    console.error("[v0] waitlist exception:", err)
+    console.error("[tipswap] waitlist exception:", err)
     return NextResponse.json({ error: "Server error" }, { status: 500 })
   }
 }

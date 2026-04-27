@@ -1,6 +1,7 @@
 import "server-only"
 import { Address, toNano } from "@ton/core"
-import { DEX, pTON } from "@ston-fi/sdk"
+import { pTON } from "@ston-fi/sdk"
+import { CPIRouterV2_2 } from "@ston-fi/sdk/dex/v2_2"
 import { getTonClient, getNetwork, sendInternalMessage } from "@/lib/wallet/ton"
 
 /**
@@ -78,7 +79,7 @@ export async function executeSwap(params: SwapParams) {
   const client = getTonClient(network)
 
   const router = client.open(
-    DEX.Router.CPI.create(Address.parse(addrs.router)),
+    CPIRouterV2_2.create(Address.parse(addrs.router)),
   )
   const proxyTon = pTON.v2_1.create(Address.parse(addrs.pton))
 
