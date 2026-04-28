@@ -1,6 +1,6 @@
 # TipSwap
 
-TipSwap is a Next.js application that combines a marketing site, a Telegram bot, and a small operational dashboard for running token tips on TON.
+TipSwap is a Telegram bot, and a small operational dashboard for running token tips on TON.
 
 At a high level:
 
