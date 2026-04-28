@@ -1,245 +1,181 @@
 "use client"
 
-import { useRef, useMemo } from "react"
+import { useMemo, useRef } from "react"
 import { Canvas, useFrame, useThree } from "@react-three/fiber"
 import * as THREE from "three"
 
-/* ─── tuning ─── */
-const NODE_COUNT = 150
-const CONNECTION_DISTANCE = 3.2
-const SPREAD_X = 24
-const SPREAD_Y = 50
-const SPREAD_Z = 5
-const NODE_SIZE_MIN = 0.04
-const NODE_SIZE_MAX = 0.12
-const LINE_OPACITY_MAX = 0.6
-const DRIFT_SPEED = 0.004
-const PULSE_SPEED = 0.8
-
+const AURA = new THREE.Color("#10353a")
 const TEAL = new THREE.Color("#2dd4bf")
-const CYAN = new THREE.Color("#22d3ee")
-const DIM_TEAL = new THREE.Color("#0d4f4f")
+const CYAN = new THREE.Color("#67e8f9")
+const WHITE = new THREE.Color("#e8fffd")
 
-/* ─── generate initial positions + velocities ─── */
-function useNetwork(count: number) {
-  return useMemo(() => {
-    const positions: [number, number, number][] = []
-    const velocities: [number, number, number][] = []
-    const sizes: number[] = []
-
-    for (let i = 0; i < count; i++) {
-      positions.push([
-        (Math.random() - 0.5) * SPREAD_X,
-        (Math.random() - 0.5) * SPREAD_Y,
-        (Math.random() - 0.5) * SPREAD_Z,
-      ])
-      velocities.push([
-        (Math.random() - 0.5) * DRIFT_SPEED,
-        (Math.random() - 0.5) * DRIFT_SPEED,
-        (Math.random() - 0.5) * DRIFT_SPEED * 0.3,
-      ])
-      sizes.push(NODE_SIZE_MIN + Math.random() * (NODE_SIZE_MAX - NODE_SIZE_MIN))
-    }
-    return { positions, velocities, sizes }
-  }, [count])
-}
-
-/* ─── instanced nodes ─── */
-function Nodes({
-  posRef,
-  sizes,
-}: {
-  posRef: React.MutableRefObject<[number, number, number][]>
-  sizes: number[]
-}) {
-  const meshRef = useRef<THREE.InstancedMesh>(null!)
-  const dummy = useMemo(() => new THREE.Object3D(), [])
-
-  const colors = useMemo(() => {
-    const arr = new Float32Array(NODE_COUNT * 3)
-    for (let i = 0; i < NODE_COUNT; i++) {
-      const c = i % 4 === 0 ? TEAL : i % 4 === 1 ? CYAN : DIM_TEAL
-      arr[i * 3] = c.r
-      arr[i * 3 + 1] = c.g
-      arr[i * 3 + 2] = c.b
-    }
-    return arr
-  }, [])
-
-  useFrame(({ clock }) => {
-    if (!meshRef.current) return
-    const t = clock.getElapsedTime()
-    const p = posRef.current
-
-    for (let i = 0; i < NODE_COUNT; i++) {
-      dummy.position.set(p[i][0], p[i][1], p[i][2])
-      const pulse = 1 + Math.sin(t * PULSE_SPEED + i * 0.5) * 0.3
-      dummy.scale.setScalar(sizes[i] * pulse)
-      dummy.updateMatrix()
-      meshRef.current.setMatrixAt(i, dummy.matrix)
-    }
-    meshRef.current.instanceMatrix.needsUpdate = true
-  })
-
-  return (
-    <instancedMesh ref={meshRef} args={[undefined, undefined, NODE_COUNT]}>
-      <sphereGeometry args={[1, 16, 16]} />
-      <meshBasicMaterial vertexColors toneMapped={false} />
-      <instancedBufferAttribute attach="instanceColor" args={[colors, 3]} />
-    </instancedMesh>
-  )
-}
-
-/* ─── line connections ─── */
-function Connections({
-  posRef,
-}: {
-  posRef: React.MutableRefObject<[number, number, number][]>
-}) {
-  const lineRef = useRef<THREE.LineSegments>(null!)
-  const geoRef = useRef<THREE.BufferGeometry>(null!)
-
-  const maxSegments = (NODE_COUNT * (NODE_COUNT - 1)) / 2
-  const posArr = useMemo(() => new Float32Array(maxSegments * 6), [maxSegments])
-  const colArr = useMemo(() => new Float32Array(maxSegments * 6), [maxSegments])
-
-  useFrame(({ clock }) => {
-    if (!geoRef.current) return
-    const p = posRef.current
-    const t = clock.getElapsedTime()
-    let idx = 0
-
-    for (let i = 0; i < NODE_COUNT; i++) {
-      for (let j = i + 1; j < NODE_COUNT; j++) {
-        const dx = p[i][0] - p[j][0]
-        const dy = p[i][1] - p[j][1]
-        const dz = p[i][2] - p[j][2]
-        const dist = Math.sqrt(dx * dx + dy * dy + dz * dz)
-
-        if (dist < CONNECTION_DISTANCE) {
-          const alpha = (1 - dist / CONNECTION_DISTANCE) * LINE_OPACITY_MAX
-          const o = idx * 6
-
-          posArr[o] = p[i][0]
-          posArr[o + 1] = p[i][1]
-          posArr[o + 2] = p[i][2]
-          posArr[o + 3] = p[j][0]
-          posArr[o + 4] = p[j][1]
-          posArr[o + 5] = p[j][2]
-
-          // pulse brightness on some lines
-          const flicker = alpha > 0.3
-            ? 1 + Math.sin(t * 2 + i + j) * 0.15
-            : 1
-          const c = alpha > 0.35 ? TEAL : alpha > 0.2 ? CYAN : DIM_TEAL
-          const a = alpha * flicker
-
-          colArr[o] = c.r * a
-          colArr[o + 1] = c.g * a
-          colArr[o + 2] = c.b * a
-          colArr[o + 3] = c.r * a
-          colArr[o + 4] = c.g * a
-          colArr[o + 5] = c.b * a
-
-          idx++
-        }
-      }
-    }
-
-    geoRef.current.setDrawRange(0, idx * 2)
-    geoRef.current.attributes.position.needsUpdate = true
-    geoRef.current.attributes.color.needsUpdate = true
-  })
-
-  return (
-    <lineSegments ref={lineRef}>
-      <bufferGeometry ref={geoRef}>
-        <bufferAttribute
-          attach="attributes-position"
-          count={maxSegments * 2}
-          array={posArr}
-          itemSize={3}
-        />
-        <bufferAttribute
-          attach="attributes-color"
-          count={maxSegments * 2}
-          array={colArr}
-          itemSize={3}
-        />
-      </bufferGeometry>
-      <lineBasicMaterial vertexColors toneMapped={false} />
-    </lineSegments>
-  )
-}
-
-/* ─── scroll-linked camera ─── */
-function ScrollCamera() {
+function ScrollRig() {
   const { camera } = useThree()
-  const scrollRef = useRef(0)
+  const targetY = useRef(0)
 
-  /* listen to window scroll and map it to camera Y */
-  useFrame(() => {
-    if (typeof window === "undefined") return
-    const scrollMax = document.documentElement.scrollHeight - window.innerHeight
-    const progress = scrollMax > 0 ? window.scrollY / scrollMax : 0
-    /* lerp for smooth movement — camera travels from top to bottom of spread */
-    const targetY = (SPREAD_Y / 2) - progress * SPREAD_Y
-    scrollRef.current += (targetY - scrollRef.current) * 0.08
-    camera.position.y = scrollRef.current
+  useFrame(({ clock }) => {
+    if (typeof window !== "undefined") {
+      const scrollMax = document.documentElement.scrollHeight - window.innerHeight
+      const progress = scrollMax > 0 ? window.scrollY / scrollMax : 0
+      targetY.current = 1.6 - progress * 3.2
+    }
+
+    const t = clock.getElapsedTime()
+    camera.position.x += ((Math.sin(t * 0.2) * 0.35) - camera.position.x) * 0.03
+    camera.position.y += (targetY.current - camera.position.y) * 0.04
+    camera.position.z += (10.5 - camera.position.z) * 0.04
+    camera.lookAt(0, 0, 0)
   })
 
   return null
 }
 
-/* ─── main scene with drift + mouse ─── */
-function NetworkScene() {
-  const { positions, velocities, sizes } = useNetwork(NODE_COUNT)
-  const posRef = useRef(positions)
-  const velRef = useRef(velocities)
+function FloatingCore() {
+  const group = useRef<THREE.Group>(null!)
+  const shell = useRef<THREE.Mesh>(null!)
 
-  /* drift + wrap */
-  useFrame(() => {
-    const p = posRef.current
-    const v = velRef.current
+  useFrame(({ clock }) => {
+    const t = clock.getElapsedTime()
+    group.current.rotation.y = t * 0.12
+    group.current.rotation.x = Math.sin(t * 0.22) * 0.04
+    group.current.position.y = Math.sin(t * 0.38) * 0.1
 
-    for (let i = 0; i < NODE_COUNT; i++) {
-      p[i][0] += v[i][0]
-      p[i][1] += v[i][1]
-      p[i][2] += v[i][2]
-
-      // wrap edges
-      const hx = SPREAD_X / 2
-      const hy = SPREAD_Y / 2
-      const hz = SPREAD_Z / 2
-      if (p[i][0] > hx) p[i][0] = -hx
-      if (p[i][0] < -hx) p[i][0] = hx
-      if (p[i][1] > hy) p[i][1] = -hy
-      if (p[i][1] < -hy) p[i][1] = hy
-      if (p[i][2] > hz) p[i][2] = -hz
-      if (p[i][2] < -hz) p[i][2] = hz
-    }
+    const scale = 1 + Math.sin(t * 0.9) * 0.02
+    shell.current.scale.setScalar(scale)
   })
 
   return (
+    <group ref={group} position={[3.2, 0.15, 0]}>
+      <mesh ref={shell}>
+        <icosahedronGeometry args={[1.45, 1]} />
+        <meshStandardMaterial
+          color={new THREE.Color("#0f2025")}
+          emissive={TEAL}
+          emissiveIntensity={0.12}
+          metalness={0.5}
+          roughness={0.32}
+          transparent
+          opacity={0.9}
+        />
+      </mesh>
+      <mesh scale={0.42}>
+        <icosahedronGeometry args={[1.45, 0]} />
+        <meshBasicMaterial color={WHITE} transparent opacity={0.82} />
+      </mesh>
+    </group>
+  )
+}
+
+function OrbitRing({
+  radius,
+  speed,
+  tiltX,
+  tiltY,
+  color,
+  opacity,
+}: {
+  radius: number
+  speed: number
+  tiltX: number
+  tiltY: number
+  color: string
+  opacity: number
+}) {
+  const group = useRef<THREE.Group>(null!)
+
+  useFrame(({ clock }) => {
+    group.current.rotation.z = clock.getElapsedTime() * speed
+  })
+
+  return (
+    <group ref={group} position={[3.2, 0.15, 0]} rotation={[tiltX, tiltY, 0]}>
+      <mesh>
+        <torusGeometry args={[radius, 0.028, 16, 180]} />
+        <meshBasicMaterial color={color} transparent opacity={opacity} />
+      </mesh>
+    </group>
+  )
+}
+
+function SparkField() {
+  const points = useRef<THREE.Points>(null!)
+  const data = useMemo(() => {
+    const count = 36
+    const positions = new Float32Array(count * 3)
+
+    for (let i = 0; i < count; i++) {
+      positions[i * 3] = (Math.random() - 0.5) * 20
+      positions[i * 3 + 1] = (Math.random() - 0.5) * 10
+      positions[i * 3 + 2] = (Math.random() - 0.5) * 8
+    }
+
+    return { positions, count }
+  }, [])
+
+  useFrame(({ clock }) => {
+    points.current.rotation.y = clock.getElapsedTime() * 0.008
+  })
+
+  return (
+    <points ref={points} position={[0, 0, -1.5]}>
+      <bufferGeometry>
+        <bufferAttribute
+          attach="attributes-position"
+          count={data.count}
+          array={data.positions}
+          itemSize={3}
+        />
+      </bufferGeometry>
+      <pointsMaterial
+        color={new THREE.Color("#78f7ee")}
+        size={0.04}
+        sizeAttenuation
+        transparent
+        opacity={0.22}
+        depthWrite={false}
+      />
+    </points>
+  )
+}
+
+function GlowPlanes() {
+  return (
     <>
-      <ScrollCamera />
-      <Nodes posRef={posRef} sizes={sizes} />
-      <Connections posRef={posRef} />
+      <mesh position={[3.6, 0.1, -2.5]} rotation={[0, 0, 0.2]}>
+        <planeGeometry args={[7.2, 7.2]} />
+        <meshBasicMaterial color={AURA} transparent opacity={0.12} depthWrite={false} />
+      </mesh>
+    </>
+  )
+}
+
+function Scene() {
+  return (
+    <>
+      <fog attach="fog" args={["#061015", 8, 18]} />
+      <ambientLight intensity={0.42} />
+      <pointLight position={[5, 4, 6]} intensity={7} color="#7cf8ef" distance={16} />
+      <ScrollRig />
+      <GlowPlanes />
+      <SparkField />
+      <FloatingCore />
+      <OrbitRing radius={2.1} speed={0.15} tiltX={1.12} tiltY={0.22} color="#67e8f9" opacity={0.26} />
+      <OrbitRing radius={2.85} speed={-0.1} tiltX={0.72} tiltY={-0.42} color="#2dd4bf" opacity={0.14} />
     </>
   )
 }
 
 export function NetworkBackground() {
   return (
-    <div className="pointer-events-none fixed inset-0 z-0">
+    <div className="pointer-events-none fixed inset-0 z-0 opacity-75">
       <Canvas
-        camera={{ position: [0, 0, 12], fov: 60 }}
+        camera={{ position: [0, 0.4, 10.5], fov: 48 }}
         dpr={[1, 1.5]}
         gl={{ antialias: true, alpha: true }}
         style={{ background: "transparent" }}
         resize={{ scroll: false }}
       >
-        <NetworkScene />
+        <Scene />
       </Canvas>
     </div>
   )
