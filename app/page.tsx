@@ -11,13 +11,15 @@ export default function Page() {
   return (
     <main className="relative flex min-h-screen flex-col bg-background text-foreground">
       <NetworkWrapper />
-      <SiteNav />
-      <Hero />
-      <HowItWorks />
-      <Features />
-      <UseCases />
-      <Waitlist />
-      <SiteFooter />
+      <div className="relative z-10 flex min-h-screen flex-col">
+        <SiteNav />
+        <Hero />
+        <HowItWorks />
+        <Features />
+        <UseCases />
+        <Waitlist />
+        <SiteFooter />
+      </div>
     </main>
   )
 }

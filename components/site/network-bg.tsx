@@ -231,7 +231,7 @@ function NetworkScene() {
 
 export function NetworkBackground() {
   return (
-    <div className="pointer-events-none fixed inset-0 -z-10">
+    <div className="pointer-events-none fixed inset-0 z-0">
       <Canvas
         camera={{ position: [0, 0, 12], fov: 60 }}
         dpr={[1, 1.5]}
