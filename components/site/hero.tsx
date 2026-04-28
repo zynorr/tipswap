@@ -104,12 +104,12 @@ function HeroChat() {
           backgroundPosition: "0 0, 0 0, 0 0, 11px 11px",
         }}
       >
-        <Bubble side="left" name="alice">
-          Great thread on liquidity routing
-        </Bubble>
-
         <Bubble side="right" name="you" highlight>
           /tip 5 USDT @alice
+        </Bubble>
+
+        <Bubble side="left" name="tipswap">
+          I found <span className="font-medium text-white">@alice</span>. Ready to send 5.00 USDT.
         </Bubble>
 
         {/* Bot confirmation card */}
@@ -119,10 +119,10 @@ function HeroChat() {
             <span className="text-xs font-medium text-[#7ad1ff]">TipSwap</span>
           </div>
           <div className="flex flex-col gap-2 text-[13px]">
-            <Row label="You send" value="2.41 TON" />
-            <Row label="alice gets" value="5.00 USDT" valueClass="font-medium text-[#7ad1ff]" />
-            <Row label="Via" value="STON.fi" />
-            <Row label="Time" value="~5 seconds" />
+            <Row label="Recipient" value="@alice" />
+            <Row label="They receive" value="5.00 USDT" valueClass="font-medium text-[#7ad1ff]" />
+            <Row label="You pay" value="2.41 TON" />
+            <Row label="Route" value="STON.fi" />
           </div>
           <div className="mt-3 flex gap-2">
             <div className="flex-1 rounded-full bg-[#5288c1] py-2 text-center text-xs font-medium text-white">
@@ -134,8 +134,8 @@ function HeroChat() {
           </div>
         </div>
 
-        <Bubble side="left" name="alice">
-          5 USDT just hit my wallet. That was instant
+        <Bubble side="left" name="tipswap">
+          Sent. @alice received 5.00 USDT.
         </Bubble>
       </div>
     </div>
