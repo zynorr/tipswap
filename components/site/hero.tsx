@@ -73,10 +73,10 @@ function Stat({ value, label }: { value: string; label: string }) {
 
 function HeroChat() {
   return (
-    <div className="overflow-hidden rounded-2xl border border-border bg-card">
+    <div className="overflow-hidden rounded-[22px] border border-white/8 bg-[#18222d] shadow-[0_20px_60px_rgba(0,0,0,0.35)]">
       {/* Chat header */}
-      <div className="flex items-center gap-3 border-b border-border px-5 py-3.5">
-        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary">
+      <div className="flex items-center gap-3 border-b border-black/15 bg-[#1f2c39] px-4 py-3">
+        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#233748] text-[#8ad7ff]">
           <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M12 2L2 7l10 5 10-5-10-5z" />
             <path d="M2 17l10 5 10-5" />
@@ -84,13 +84,26 @@ function HeroChat() {
           </svg>
         </div>
         <div className="flex-1">
-          <p className="text-sm font-medium text-foreground">TON Builders</p>
-          <p className="text-[11px] text-muted-foreground">12 members</p>
+          <p className="text-sm font-medium text-white">tipswap</p>
+          <p className="text-[11px] text-[#8fa3b5]">bot</p>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="h-1.5 w-1.5 rounded-full bg-[#4fae4e]" />
+          <span className="text-[11px] text-[#8fa3b5]">online</span>
         </div>
       </div>
 
       {/* Messages */}
-      <div className="flex flex-col gap-3 p-4">
+      <div
+        className="flex flex-col gap-3 p-4"
+        style={{
+          backgroundColor: "#0e1621",
+          backgroundImage:
+            "radial-gradient(circle at 15% 25%, rgba(255,255,255,0.035), transparent 18%), radial-gradient(circle at 75% 15%, rgba(255,255,255,0.03), transparent 16%), linear-gradient(135deg, rgba(255,255,255,0.018) 25%, transparent 25%), linear-gradient(225deg, rgba(255,255,255,0.015) 25%, transparent 25%)",
+          backgroundSize: "auto, auto, 22px 22px, 22px 22px",
+          backgroundPosition: "0 0, 0 0, 0 0, 11px 11px",
+        }}
+      >
         <Bubble side="left" name="alice">
           Great thread on liquidity routing
         </Bubble>
@@ -100,22 +113,22 @@ function HeroChat() {
         </Bubble>
 
         {/* Bot confirmation card */}
-        <div className="mx-auto w-full rounded-xl border border-primary/20 bg-primary/[0.04] p-4">
+        <div className="mx-auto w-full rounded-2xl border border-[#22313d] bg-[#17212b] p-4 shadow-[0_10px_30px_rgba(0,0,0,0.18)]">
           <div className="mb-3 flex items-center gap-2">
-            <Gift className="h-3.5 w-3.5 text-primary" />
-            <span className="text-xs font-medium text-primary">TipSwap</span>
+            <Gift className="h-3.5 w-3.5 text-[#7ad1ff]" />
+            <span className="text-xs font-medium text-[#7ad1ff]">TipSwap</span>
           </div>
           <div className="flex flex-col gap-2 text-[13px]">
             <Row label="You send" value="2.41 TON" />
-            <Row label="alice gets" value="5.00 USDT" valueClass="text-primary font-medium" />
+            <Row label="alice gets" value="5.00 USDT" valueClass="font-medium text-[#7ad1ff]" />
             <Row label="Via" value="STON.fi" />
             <Row label="Time" value="~5 seconds" />
           </div>
           <div className="mt-3 flex gap-2">
-            <div className="flex-1 rounded-lg bg-primary py-2 text-center text-xs font-medium text-primary-foreground">
+            <div className="flex-1 rounded-full bg-[#5288c1] py-2 text-center text-xs font-medium text-white">
               Confirm
             </div>
-            <div className="rounded-lg border border-border px-4 py-2 text-center text-xs text-muted-foreground">
+            <div className="rounded-full bg-[#22303d] px-4 py-2 text-center text-xs text-[#9eb1c3]">
               Cancel
             </div>
           </div>
@@ -132,8 +145,8 @@ function HeroChat() {
 function Row({ label, value, valueClass }: { label: string; value: string; valueClass?: string }) {
   return (
     <div className="flex items-center justify-between">
-      <span className="text-muted-foreground">{label}</span>
-      <span className={valueClass || "text-foreground"}>{value}</span>
+      <span className="text-[#8fa3b5]">{label}</span>
+      <span className={valueClass || "text-white"}>{value}</span>
     </div>
   )
 }
@@ -152,15 +165,15 @@ function Bubble({
   const isLeft = side === "left"
   return (
     <div className={`flex flex-col gap-1 ${isLeft ? "items-start" : "items-end"}`}>
-      <span className="px-1 text-[10px] font-medium text-muted-foreground">
+      <span className="px-1 text-[10px] font-medium text-[#7f94a8]">
         {name}
       </span>
       <div
         className={`max-w-[80%] rounded-2xl px-3.5 py-2 text-[13px] leading-relaxed ${
           isLeft
-            ? "rounded-bl-md bg-secondary text-foreground"
-            : "rounded-br-md bg-primary/10 text-foreground"
-        } ${highlight ? "font-mono text-primary" : ""}`}
+            ? "rounded-bl-md bg-[#182533] text-[#e6eef7]"
+            : "rounded-br-md bg-[#5288c1] text-white"
+        } ${highlight ? "font-mono" : ""}`}
       >
         {children}
       </div>
