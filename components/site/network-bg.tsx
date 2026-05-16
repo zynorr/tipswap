@@ -121,9 +121,7 @@ function SparkField() {
       <bufferGeometry>
         <bufferAttribute
           attach="attributes-position"
-          count={data.count}
-          array={data.positions}
-          itemSize={3}
+          args={[data.positions, 3]}
         />
       </bufferGeometry>
       <pointsMaterial

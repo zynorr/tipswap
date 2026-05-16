@@ -1,6 +1,6 @@
 import "server-only"
 import { Bot } from "grammy"
-import { getOrCreateUser, decryptMnemonic, logSwap, updateSwapStatus, type TgWallet } from "./users"
+import { getOrCreateUser, decryptMnemonic, logSwap, updateSwapStatus, type TgUser, type TgWallet } from "./users"
 import { getBalance, getNetwork } from "@/lib/wallet/ton"
 import { executeSwap, resolveToken, TOKENS } from "@/lib/ston/swap"
 import { fromNano } from "@ton/core"
@@ -119,7 +119,8 @@ export function getBot(): Bot {
       return
     }
 
-    let user, wallet: TgWallet
+    let user: TgUser
+    let wallet: TgWallet
     try {
       const r = await getOrCreateUser({
         tgId: tgUser.id,
@@ -169,7 +170,7 @@ export function getBot(): Bot {
         slippageBps: 100,
       })
 
-      await updateSwapStatus(log.id as string, {
+      await updateSwapStatus(log.id, {
         status: result.sent ? "sent" : "failed",
         error: result.sent ? undefined : "Transaction did not confirm in time",
       })
@@ -189,7 +190,7 @@ export function getBot(): Bot {
     } catch (err) {
       const msg = (err as Error).message ?? String(err)
       console.error("[tipswap] /swap failed:", err)
-      await updateSwapStatus(log.id as string, {
+      await updateSwapStatus(log.id, {
         status: "failed",
         error: msg.slice(0, 300),
       })

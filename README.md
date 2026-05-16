@@ -71,6 +71,8 @@ scripts/
 
 ## Product behavior
 
+For STON.fi meeting prep, see `docs/stonfi-meeting-brief.md`.
+
 ### Supported bot commands
 
 | Command | Description |
@@ -127,6 +129,7 @@ Operational notes:
 | --- | --- |
 | `TELEGRAM_BOT_TOKEN` | Telegram bot token from `@BotFather` |
 | `TELEGRAM_WEBHOOK_SECRET` | Secret token validated on webhook requests |
+| `ADMIN_SETUP_TOKEN` | Bearer token required for webhook setup API access in production |
 | `WALLET_ENCRYPTION_KEY` | Symmetric key material for mnemonic encryption |
 | `STON_NETWORK` | Must be `mainnet` |
 | `NEXT_PUBLIC_SUPABASE_URL` | Public Supabase project URL |
@@ -207,6 +210,7 @@ The webhook setup/inspection API is:
 ```
 
 The webhook handler validates the `X-Telegram-Bot-Api-Secret-Token` header using `TELEGRAM_WEBHOOK_SECRET`.
+The setup API validates `Authorization: Bearer <ADMIN_SETUP_TOKEN>` in production.
 
 ## Operational notes
 
@@ -244,6 +248,8 @@ This project uses a managed per-user wallet model. That is convenient for protot
 | `pnpm build` | Build the app for production |
 | `pnpm start` | Start the production server |
 | `pnpm lint` | Run ESLint |
+| `pnpm typecheck` | Run TypeScript without emitting files |
+| `pnpm verify` | Run typecheck, lint, and production build |
 
 ## License
 

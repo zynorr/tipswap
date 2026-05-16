@@ -35,6 +35,10 @@ export const TOKENS: Record<string, { mainnet: string; decimals: number }> = {
     mainnet: "EQA2kCVNwVsil2EM2mB0SkXytxCqQjS4mttjDpnXmwG9T6bO",
     decimals: 9,
   },
+  NOT: {
+    mainnet: "EQAvlWFDxGF2lXm67y4yzC17wYKD9A0guwPkMs1gOsM__NOT",
+    decimals: 9,
+  },
 }
 
 export function resolveToken(symbol: string) {
@@ -115,7 +119,7 @@ export async function executeSwap(params: SwapParams) {
     )
   }
 
-  let txParams: { to: Address; value: bigint; body: import("@ton/core").Cell }
+  let txParams: { to: Address; value: bigint; body?: import("@ton/core").Cell | null }
 
   try {
     if (offer.symbol === "TON" && ask.symbol !== "TON") {
@@ -168,7 +172,7 @@ export async function executeSwap(params: SwapParams) {
     mnemonic: params.mnemonic,
     to: txParams.to,
     value: txParams.value,
-    body: txParams.body,
+    body: txParams.body ?? undefined,
   })
 
   return {

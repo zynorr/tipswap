@@ -7,6 +7,7 @@ import { Loader2, RefreshCw, Trash2 } from "lucide-react"
 
 type WebhookInfo = {
   ok: boolean
+  error?: string
   result?: {
     url: string
     pending_update_count: number
@@ -19,16 +20,35 @@ type WebhookInfo = {
 export default function AdminSetupPage() {
   const [info, setInfo] = useState<WebhookInfo | null>(null)
   const [url, setUrl] = useState("")
+  const [adminToken, setAdminToken] = useState("")
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
 
-  async function refresh() {
+  function authHeaders(token = adminToken): HeadersInit {
+    return token.trim()
+      ? { authorization: `Bearer ${token.trim()}` }
+      : {}
+  }
+
+  function updateAdminToken(value: string) {
+    setAdminToken(value)
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("tipswap-admin-token", value)
+    }
+  }
+
+  async function refresh(tokenOverride = adminToken) {
     setBusy(true)
     setMsg(null)
     try {
-      const r = await fetch("/api/bot/setup")
+      const r = await fetch("/api/bot/setup", {
+        headers: authHeaders(tokenOverride),
+      })
       const data = (await r.json()) as WebhookInfo
       setInfo(data)
+      if (!r.ok) {
+        setMsg(data.error ?? "Could not load webhook info.")
+      }
     } finally {
       setBusy(false)
     }
@@ -44,7 +64,7 @@ export default function AdminSetupPage() {
     try {
       const r = await fetch("/api/bot/setup", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "application/json", ...authHeaders() },
         body: JSON.stringify({ action: "set", url }),
       })
       const data = await r.json()
@@ -61,7 +81,7 @@ export default function AdminSetupPage() {
     try {
       const r = await fetch("/api/bot/setup", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "application/json", ...authHeaders() },
         body: JSON.stringify({ action: "delete" }),
       })
       const data = await r.json()
@@ -73,10 +93,14 @@ export default function AdminSetupPage() {
   }
 
   useEffect(() => {
-    refresh()
+    const savedToken = window.localStorage.getItem("tipswap-admin-token") ?? ""
+    setAdminToken(savedToken)
+    refresh(savedToken)
     if (typeof window !== "undefined") {
       setUrl(window.location.origin)
     }
+    // Run once on mount to hydrate the saved admin token and initial URL.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const result = info?.result
@@ -94,9 +118,20 @@ export default function AdminSetupPage() {
       </header>
 
       <section className="flex flex-col gap-4 rounded-2xl border border-border bg-card p-6">
+        <h2 className="text-sm font-semibold">Admin access</h2>
+        <Input
+          type="password"
+          value={adminToken}
+          onChange={(e) => updateAdminToken(e.target.value)}
+          placeholder="ADMIN_SETUP_TOKEN"
+          className="h-11 font-mono text-xs"
+        />
+      </section>
+
+      <section className="flex flex-col gap-4 rounded-2xl border border-border bg-card p-6">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold">Current webhook</h2>
-          <Button variant="ghost" size="sm" onClick={refresh} disabled={busy}>
+          <Button variant="ghost" size="sm" onClick={() => refresh()} disabled={busy}>
             <RefreshCw className={`mr-2 h-4 w-4 ${busy ? "animate-spin" : ""}`} />
             Refresh
           </Button>

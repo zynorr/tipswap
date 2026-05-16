@@ -1,10 +1,11 @@
-import { createClient } from "@supabase/supabase-js"
+import { createClient, type SupabaseClient } from "@supabase/supabase-js"
+import type { Database } from "@/lib/supabase/types"
 
 /**
  * Service-role Supabase client. Bypasses RLS.
  * Only ever import this from server-only code (bot, API routes).
  */
-let _admin: ReturnType<typeof createClient> | null = null
+let _admin: SupabaseClient<Database> | null = null
 
 export function adminClient() {
   if (_admin) return _admin
@@ -20,7 +21,7 @@ export function adminClient() {
     )
   }
 
-  _admin = createClient(url, serviceKey, {
+  _admin = createClient<Database>(url, serviceKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   })
 
