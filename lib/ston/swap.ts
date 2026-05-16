@@ -1,8 +1,10 @@
 import "server-only"
 import { Address, toNano } from "@ton/core"
+import { TonClient } from "@ton/ton"
 import { pTON } from "@ston-fi/sdk"
 import { CPIRouterV2_2 } from "@ston-fi/sdk/dex/v2_2"
 import { getBalance, getTonClient, getNetwork, sendInternalMessage } from "@/lib/wallet/ton"
+
 
 /**
  * STON.fi DEX v2.2 contract addresses.
@@ -179,6 +181,23 @@ export async function executeSwap(params: SwapParams) {
     throw err
   }
 
+  // Get an on-chain quote (expected output) before sending
+  let expectedOut: string | null = null
+  try {
+    expectedOut = await getExpectedOut({
+      client,
+      routerAddress: Address.parse(addrs.router),
+      offerSymbol: offer.symbol,
+      askSymbol: ask.symbol,
+      offerRaw,
+      askDecimals: ask.decimals,
+      ptonAddress: Address.parse(addrs.pton),
+    })
+  } catch (e) {
+    // Quote is best-effort — don't block the swap if it fails
+    console.warn("[tipswap] quote lookup failed:", (e as Error).message)
+  }
+
   const result = await sendInternalMessage({
     mnemonic: params.mnemonic,
     to: txParams.to,
@@ -188,7 +207,7 @@ export async function executeSwap(params: SwapParams) {
 
   return {
     ...result,
-    expectedOut: minAskAmount.toString(),
+    expectedOut,
     offerRaw: offerRaw.toString(),
     network,
   }
@@ -204,3 +223,65 @@ export function estimateGasTon(offerSymbol: string, askSymbol: string) {
 }
 
 export const SWAP_NETWORK = getNetwork
+
+/**
+ * Format a raw token amount with the given decimals into a human-readable string.
+ */
+function formatTokenAmount(raw: bigint, decimals: number): string {
+  const divisor = BigInt(10 ** decimals)
+  const whole = raw / divisor
+  const frac = (raw % divisor).toString().padStart(decimals, "0").slice(0, 4)
+  return `${whole}.${frac}`
+}
+
+/**
+ * Query the STON.fi pool to estimate how much the user will receive from a swap.
+ * Uses the pool's on-chain reserves and fee structure.
+ */
+export async function getExpectedOut(params: {
+  client: TonClient
+  routerAddress: Address
+  offerSymbol: string
+  askSymbol: string
+  offerRaw: bigint
+  askDecimals: number
+  ptonAddress: Address
+}): Promise<string> {
+  const { client, routerAddress, offerSymbol, askSymbol, offerRaw, askDecimals, ptonAddress } = params
+
+  const router = client.open(CPIRouterV2_2.create(routerAddress))
+
+  // Determine pool tokens (always offer first, ask second)
+  let token0: Address, token1: Address
+  if (offerSymbol === "TON" && askSymbol !== "TON") {
+    token0 = ptonAddress
+    token1 = Address.parse(TOKENS[askSymbol].mainnet)
+  } else if (offerSymbol !== "TON" && askSymbol === "TON") {
+    token0 = Address.parse(TOKENS[offerSymbol].mainnet)
+    token1 = ptonAddress
+  } else if (offerSymbol !== "TON" && askSymbol !== "TON") {
+    token0 = Address.parse(TOKENS[offerSymbol].mainnet)
+    token1 = Address.parse(TOKENS[askSymbol].mainnet)
+  } else {
+    throw new Error("Cannot swap TON to TON")
+  }
+
+  const pool = await router.getPool({ token0, token1 })
+
+  const provider = client.provider(pool.address)
+  const data = await pool.getPoolData(provider)
+
+  // reserve0 belongs to token0 (offer), reserve1 belongs to token1 (ask)
+  const reserveIn = data.reserve0
+  const reserveOut = data.reserve1
+
+  // Total fee in basis points (STON.fi CPI pool: lpFee + protocolFee ≈ 30 bps)
+  const feeBps = Number(data.lpFee) + Number(data.protocolFee)
+
+  // Constant product formula with fee
+  const amountInWithFee = offerRaw * BigInt(10000 - feeBps) / 10000n
+  const newReserveIn = reserveIn + amountInWithFee
+  const expectedOut = reserveOut - (reserveIn * reserveOut) / newReserveIn
+
+  return formatTokenAmount(expectedOut, askDecimals)
+}

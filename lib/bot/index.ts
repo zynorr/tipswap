@@ -237,17 +237,20 @@ export function getBot(): Bot {
 
       if (result.sent) {
         const txLink = `https://tonviewer.com/${wallet.address}`
-        await ctx.reply(
-          [
-            `<b>✅ Swap complete!</b>`,
-            "",
-            `Swapped <b>${amountStr} ${offer.toUpperCase()}</b> → <b>${ask.toUpperCase()}</b>`,
-            `📡 ${getNetworkDisplay()}`,
-            `🔢 Seqno: ${result.seqno}`,
-            `🔗 <a href="${txLink}">View on tonviewer.com</a>`,
-          ].join("\n"),
-          { parse_mode: "HTML" },
+        const lines = [
+          `<b>✅ Swap complete!</b>`,
+          "",
+          `Swapped <b>${amountStr} ${offer.toUpperCase()}</b> → <b>${ask.toUpperCase()}</b>`,
+        ]
+        if (result.expectedOut) {
+          lines.push(`≈ <b>${result.expectedOut}</b> ${ask.toUpperCase()} received`)
+        }
+        lines.push(
+          `📡 ${getNetworkDisplay()}`,
+          `🔢 Seqno: ${result.seqno}`,
+          `🔗 <a href="${txLink}">View on tonviewer.com</a>`,
         )
+        await ctx.reply(lines.join("\n"), { parse_mode: "HTML" })
       } else {
         await ctx.reply(
           [
