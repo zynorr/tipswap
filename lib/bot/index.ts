@@ -1,7 +1,7 @@
 import "server-only"
 import { Bot } from "grammy"
 import { getOrCreateUser, decryptMnemonic, logSwap, updateSwapStatus, type TgUser, type TgWallet } from "./users"
-import { getBalance, getNetworkDisplay } from "@/lib/wallet/ton"
+import { getBalance, getJettonBalance, getNetworkDisplay } from "@/lib/wallet/ton"
 import { executeSwap, resolveToken, TOKENS } from "@/lib/ston/swap"
 import { fromNano } from "@ton/core"
 
@@ -39,8 +39,9 @@ export function getBot(): Bot {
             "<code>/swap 0.1 TON USDT</code>",
             "",
             "<b>Commands</b>",
-            "/wallet  —  view address &amp; balance",
-            "/help    —  full command list",
+            "/wallet   —  view address &amp; TON balance",
+            "/balance  —  view TON, USDT &amp; STON balances",
+            "/help     —  full command list",
           ]
         : [
             `<b>👋 Welcome back, ${user.first_name ?? "friend"}!</b>`,
@@ -64,8 +65,9 @@ export function getBot(): Bot {
         "<b>🤖 TipSwap Help</b>",
         "",
         "<b>Commands</b>",
-        "/start   —  register or restore your wallet",
-        "/wallet  —  show address, balance &amp; settings",
+        "/start    —  register or restore your wallet",
+        "/wallet   —  show address &amp; TON balance",
+        "/balance  —  show TON, USDT &amp; STON balances",
         "/swap &lt;amount&gt; &lt;from&gt; &lt;to&gt;  —  cross-token swap",
         "",
         "<b>Example</b>",
@@ -110,6 +112,45 @@ export function getBot(): Bot {
       const msg = (err as Error).message ?? String(err)
       console.error("[tipswap] /wallet failed:", err)
       await ctx.reply(`Wallet lookup failed: ${msg}`)
+    }
+  })
+
+  bot.command("balance", async (ctx) => {
+    const tgUser = ctx.from
+    if (!tgUser) return
+
+    try {
+      const { wallet } = await getOrCreateUser({
+        tgId: tgUser.id,
+        tgUsername: tgUser.username ?? null,
+        firstName: tgUser.first_name ?? null,
+      })
+
+      const [tonBal, usdtBal, stonBal] = await Promise.all([
+        getBalance(wallet.address),
+        getJettonBalance(wallet.address, TOKENS.USDT.mainnet),
+        getJettonBalance(wallet.address, TOKENS.STON.mainnet),
+      ])
+
+      const txLink = `https://tonviewer.com/${wallet.address}`
+
+      await ctx.reply(
+        [
+          `<b>💰 Token Balances</b>`,
+          "",
+          `TON:   <b>${fromNano(tonBal)}</b>`,
+          `USDT:  <b>${fromNano(usdtBal, 6)}</b>`,
+          `STON:  <b>${fromNano(stonBal)}</b>`,
+          "",
+          `📡 ${getNetworkDisplay()}`,
+          `🔗 <a href="${txLink}">View on tonviewer.com</a>`,
+        ].join("\n"),
+        { parse_mode: "HTML" },
+      )
+    } catch (err) {
+      const msg = (err as Error).message ?? String(err)
+      console.error("[tipswap] /balance failed:", err)
+      await ctx.reply(`Balance lookup failed: ${msg}`)
     }
   })
 

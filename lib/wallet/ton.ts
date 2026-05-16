@@ -1,7 +1,7 @@
 import "server-only"
 import { mnemonicNew, mnemonicToWalletKey } from "@ton/crypto"
 import { WalletContractV4, TonClient, internal, SendMode } from "@ton/ton"
-import { Address, type Cell } from "@ton/core"
+import { Address, beginCell, type Cell } from "@ton/core"
 
 const ENDPOINTS = {
   mainnet: "https://toncenter.com/api/v2/jsonRPC",
@@ -106,6 +106,45 @@ export async function getBalance(address: string) {
     return balance // bigint, in nanotons
   } catch (err) {
     throw mapTonRpcError(err, "balance fetch")
+  }
+}
+
+/**
+ * Get the balance of a specific jetton for a given user address.
+ * Queries the jetton minter for the user's jetton wallet address,
+ * then reads the balance from that wallet.
+ * Returns 0n if the jetton wallet doesn't exist (no balance).
+ */
+export async function getJettonBalance(userAddress: string, jettonMinterAddress: string) {
+  const client = getTonClient()
+  try {
+    // 1. Get the jetton wallet address for this user from the minter
+    const walletAddrResult = await withRateLimitRetry(() =>
+      client.runMethod(
+        Address.parse(jettonMinterAddress),
+        "get_wallet_address",
+        [{ type: "slice", cell: beginCell().storeAddress(Address.parse(userAddress)).endCell() }],
+      ),
+    )
+    const jettonWalletAddress = walletAddrResult.stack.readAddress()
+
+    // 2. Get wallet data (balance is first value in the tuple)
+    const walletData = await withRateLimitRetry(() =>
+      client.runMethod(jettonWalletAddress, "get_wallet_data", []),
+    )
+    return walletData.stack.readBigNumber() // bigint, in raw token units
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    // If the contract doesn't exist (exit code -1 or contract not found), balance is 0
+    if (
+      message.toLowerCase().includes("contract not initialized") ||
+      message.toLowerCase().includes("exit code") ||
+      message.toLowerCase().includes("unable to execute") ||
+      message.toLowerCase().includes("account not found")
+    ) {
+      return 0n
+    }
+    throw mapTonRpcError(err, "jetton balance fetch")
   }
 }
 
