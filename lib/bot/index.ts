@@ -48,7 +48,7 @@ export function getBot(): Bot {
             "",
             `Wallet: <code>${wallet.address}</code>`,
             "",
-            "Try /wallet, /swap, or /help.",
+            "Try /balance, /wallet, /swap, or /help.",
           ]
 
       await ctx.reply(lines.join("\n"), { parse_mode: "HTML" })
