@@ -12,6 +12,9 @@ tsconfig.tsbuildinfo
 # IDE / OS
 .DS_Store
 
+# Prevent accidental nested clone
+tipswap/
+
 # Vercel CLI
 .vercel
 
