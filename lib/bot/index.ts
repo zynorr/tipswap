@@ -1,7 +1,7 @@
 import "server-only"
 import { Bot } from "grammy"
 import { getOrCreateUser, decryptMnemonic, logSwap, updateSwapStatus, type TgUser, type TgWallet } from "./users"
-import { getBalance, getNetwork, getNetworkDisplay } from "@/lib/wallet/ton"
+import { getBalance, getNetworkDisplay } from "@/lib/wallet/ton"
 import { executeSwap, resolveToken, TOKENS } from "@/lib/ston/swap"
 import { fromNano } from "@ton/core"
 
