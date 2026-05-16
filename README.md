@@ -34,11 +34,16 @@ flowchart TB
     TG -- "HTTPS webhook" --> API
     WB -- "HTTP" --> API
     API --> BOT
-    BOT --> USERS & TON_WALLET & SWAP
-    USERS & TON_WALLET & SWAP --> SUPALIB
+    BOT --> USERS
+    BOT --> TON_WALLET
+    BOT --> SWAP
+    USERS --> SUPALIB
+    TON_WALLET --> SUPALIB
+    SWAP --> SUPALIB
     SUPALIB --> SUPABASE
     TON_WALLET --> TON
-    SWAP --> TON & STON
+    SWAP --> TON
+    SWAP --> STON
 ```
 
 **How a swap works:**
