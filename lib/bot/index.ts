@@ -1,3 +1,17 @@
+/**
+ * @file Telegram bot command handlers.
+ *
+ * Architecture:
+ *   - Single Bot instance created lazily via getBot()
+ *   - Command handlers: /start, /wallet, /balance, /swap, /help
+ *   - Each handler resolves the user + wallet via getOrCreateUser() first
+ *   - /swap follows a state machine: validate → log → preflight → execute → update_status → respond
+ *   - All responses use HTML parse_mode for formatting
+ *   - Errors are caught per-command and surfaced to the user with the actual error message
+ *
+ * The bot is designed to be stateless — every request fetches user/wallet from Supabase
+ * and chain state fresh from TON RPC.
+ */
 import "server-only"
 import { Bot } from "grammy"
 import { getOrCreateUser, decryptMnemonic, logSwap, updateSwapStatus, type TgUser, type TgWallet } from "./users"

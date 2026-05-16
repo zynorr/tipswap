@@ -1,3 +1,16 @@
+/**
+ * @file STON.fi DEX integration — swap construction, gas estimation, and on-chain quoting.
+ *
+ * Flow:
+ *   1. Resolve token addresses (mainnet minter addresses)
+ *   2. Preflight: check the wallet has enough TON for swap amount + gas + buffer
+ *   3. Build the swap transaction via CPIRouterV2_2 (handles TON↔Jetton, Jetton→TON, Jetton→Jetton)
+ *   4. Query the pool on-chain for a real-time expected output quote
+ *   5. Broadcast and confirm (seqno polling)
+ *
+ * The CPIRouterV2_2 works with pTON v2.1 for native TON wrapping/unwrapping.
+ * All swap paths use a single pool hop through the CPI router.
+ */
 import "server-only"
 import { Address, toNano } from "@ton/core"
 import { TonClient } from "@ton/ton"

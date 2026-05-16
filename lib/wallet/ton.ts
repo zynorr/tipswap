@@ -1,3 +1,16 @@
+/**
+ * @file TON blockchain integration — client, wallet generation, balance queries, and transaction broadcasting.
+ *
+ * Architecture:
+ *   - Uses TONCenter JSON-RPC as the blockchain endpoint (mainnet only)
+ *   - Wallet generation produces 24-word mnemonics for WalletContractV4
+ *   - Balance queries include exponential backoff for TONCenter 429 rate limits
+ *   - Transaction broadcasting polls seqno to confirm the wallet processed the message
+ *   - Jetton balance lookup uses two RPC calls: get_wallet_address (minter) → get_wallet_data (wallet)
+ *
+ * Rate-limit retry: 5 attempts with 2x backoff starting at 600ms.
+ * Error mapping converts raw RPC errors into user-facing messages.
+ */
 import "server-only"
 import { mnemonicNew, mnemonicToWalletKey } from "@ton/crypto"
 import { WalletContractV4, TonClient, internal, SendMode } from "@ton/ton"
