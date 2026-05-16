@@ -82,7 +82,7 @@ function requiredTonForSwap(offerSymbol: string, askSymbol: string, offerRaw: bi
     isTonOffer || isTonAsk ? toNano("0.2") : toNano("0.3")
   const buffer = toNano("0.05")
   const offerPart = isTonOffer ? offerRaw : 0n
-  return offerPart + gas + buffer
+  return { offerPart, gas, buffer, total: offerPart + gas + buffer }
 }
 
 function formatTon(amountNano: bigint) {
@@ -115,11 +115,21 @@ export async function executeSwap(params: SwapParams) {
 
   // Preflight: for any swap we need TON for gas; for TON offers we need offer+gas.
   const tonBalance = await getBalance(params.userAddress)
-  const tonNeeded = requiredTonForSwap(offer.symbol, ask.symbol, offerRaw)
-  if (tonBalance < tonNeeded) {
-    throw new SwapUserError(
-      `Insufficient TON balance. Need about ${formatTon(tonNeeded)} TON, but wallet has ${formatTon(tonBalance)} TON.`,
-    )
+  const cost = requiredTonForSwap(offer.symbol, ask.symbol, offerRaw)
+  if (tonBalance < cost.total) {
+    const lines = [
+      `Insufficient TON balance. Need ${formatTon(cost.total)} TON, wallet has ${formatTon(tonBalance)} TON.`,
+      "",
+    ]
+    if (offer.symbol === "TON") {
+      lines.push(`Swap amount: ${formatTon(cost.offerPart)} TON`)
+    }
+    if (ask.symbol !== "TON") {
+      lines.push(`Gas (STON.fi): ${formatTon(cost.gas)} TON`)
+    }
+    lines.push(`Safety buffer: ${formatTon(cost.buffer)} TON`)
+
+    throw new SwapUserError(lines.join("\n"))
   }
 
   let txParams: { to: Address; value: bigint; body?: import("@ton/core").Cell | null }
