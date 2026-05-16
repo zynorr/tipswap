@@ -1,7 +1,6 @@
 # TipSwap
 
-TipSwap is a Telegram bot, and a small operational dashboard for running token tips on TON.
-
+A Telegram bot that lets users tip each other in any TON-based token. The sender pays in their preferred token, the recipient receives in theirs, and STON.fi handles the swap atomically in between.
 At a high level:
 
 - users interact with the bot in Telegram
