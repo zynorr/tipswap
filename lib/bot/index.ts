@@ -198,7 +198,7 @@ export function getBot(): Bot {
             `Swapped <b>${amountStr} ${offer.toUpperCase()}</b> → <b>${ask.toUpperCase()}</b>`,
             `📡 ${getNetworkDisplay()}`,
             `🔢 Seqno: ${result.seqno}`,
-            `<a href="${txLink}">View on tonviewer.com</a>`,
+            `🔗 <a href="${txLink}">View on tonviewer.com</a>`,
           ].join("\n"),
           { parse_mode: "HTML" },
         )
