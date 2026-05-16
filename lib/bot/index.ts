@@ -190,6 +190,7 @@ export function getBot(): Bot {
       })
 
       if (result.sent) {
+        const txLink = `https://tonviewer.com/${wallet.address}`
         await ctx.reply(
           [
             `<b>✅ Swap complete!</b>`,
@@ -197,6 +198,7 @@ export function getBot(): Bot {
             `Swapped <b>${amountStr} ${offer.toUpperCase()}</b> → <b>${ask.toUpperCase()}</b>`,
             `📡 ${getNetworkDisplay()}`,
             `🔢 Seqno: ${result.seqno}`,
+            `<a href="${txLink}">View on tonviewer.com</a>`,
           ].join("\n"),
           { parse_mode: "HTML" },
         )
