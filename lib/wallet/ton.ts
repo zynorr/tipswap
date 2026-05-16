@@ -13,6 +13,10 @@ export function getNetwork(): TonNetwork {
   return "mainnet"
 }
 
+export function getNetworkDisplay(): string {
+  return "TON Mainnet"
+}
+
 function isRateLimitError(err: unknown) {
   const message = err instanceof Error ? err.message : String(err)
   return message.includes("429") || message.toLowerCase().includes("too many requests")

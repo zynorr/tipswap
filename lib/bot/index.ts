@@ -1,7 +1,7 @@
 import "server-only"
 import { Bot } from "grammy"
 import { getOrCreateUser, decryptMnemonic, logSwap, updateSwapStatus, type TgUser, type TgWallet } from "./users"
-import { getBalance, getNetwork } from "@/lib/wallet/ton"
+import { getBalance, getNetwork, getNetworkDisplay } from "@/lib/wallet/ton"
 import { executeSwap, resolveToken, TOKENS } from "@/lib/ston/swap"
 import { fromNano } from "@ton/core"
 
@@ -28,24 +28,25 @@ export function getBot(): Bot {
 
       const lines = created
         ? [
-            `Welcome to TipSwap, ${tgUser.first_name ?? "friend"}.`,
+            `<b>✨ Welcome to TipSwap, ${tgUser.first_name ?? "friend"}!</b>`,
             "",
-            "I just spun up a managed TON wallet for you:",
+            "I just created a managed TON wallet for you:",
             `<code>${wallet.address}</code>`,
             "",
-            `Network: <b>${getNetwork()}</b>`,
+            `📡 <b>${getNetworkDisplay()}</b>`,
             "",
-            "Top it up, then try:",
+            "Send some TON to this address, then try a swap:",
             "<code>/swap 0.1 TON USDT</code>",
             "",
-            "Other commands:",
-            "/wallet — show address &amp; balance",
-            "/help — full command list",
+            "<b>Commands</b>",
+            "/wallet  —  view address &amp; balance",
+            "/help    —  full command list",
           ]
         : [
-            `Welcome back, ${user.first_name ?? "friend"}.`,
+            `<b>👋 Welcome back, ${user.first_name ?? "friend"}!</b>`,
             "",
             `Wallet: <code>${wallet.address}</code>`,
+            "",
             "Try /wallet, /swap, or /help.",
           ]
 
@@ -60,14 +61,20 @@ export function getBot(): Bot {
   bot.command("help", async (ctx) => {
     await ctx.reply(
       [
-        "<b>TipSwap commands</b>",
+        "<b>🤖 TipSwap Help</b>",
         "",
-        "/start — register and get a wallet",
-        "/wallet — show your address and TON balance",
-        "/swap &lt;amount&gt; &lt;from&gt; &lt;to&gt; — swap one token for another",
-        "  example: <code>/swap 0.5 TON USDT</code>",
+        "<b>Commands</b>",
+        "/start   —  register or restore your wallet",
+        "/wallet  —  show address, balance &amp; settings",
+        "/swap &lt;amount&gt; &lt;from&gt; &lt;to&gt;  —  cross-token swap",
         "",
-        `Currently on <b>${getNetwork()}</b>.`,
+        "<b>Example</b>",
+        "<code>/swap 0.5 TON USDT</code>",
+        "",
+        "<b>Supported tokens</b>",
+        Object.keys(TOKENS).join(", "),
+        "",
+        `📡 <b>${getNetworkDisplay()}</b>`,
       ].join("\n"),
       { parse_mode: "HTML" },
     )
@@ -89,12 +96,13 @@ export function getBot(): Bot {
 
       await ctx.reply(
         [
-          `<b>Your TipSwap wallet</b>`,
+          `<b>💼 Your TipSwap Wallet</b>`,
+          "",
           `<code>${wallet.address}</code>`,
           "",
-          `Balance: <b>${ton} TON</b>`,
-          `Network: ${getNetwork()}`,
-          `Default receive token: ${user.default_recv_token}`,
+          `💰 Balance: <b>${ton} TON</b>`,
+          `📡 ${getNetworkDisplay()}`,
+          `🎯 Receive as: ${user.default_recv_token}`,
         ].join("\n"),
         { parse_mode: "HTML" },
       )
@@ -158,7 +166,10 @@ export function getBot(): Bot {
     })
 
     await ctx.reply(
-      `Swapping <b>${amountStr} ${offer.toUpperCase()}</b> → <b>${ask.toUpperCase()}</b>...\nThis can take 10–30 seconds.`,
+      [
+        `🔄 Swapping <b>${amountStr} ${offer.toUpperCase()}</b> → <b>${ask.toUpperCase()}</b>...`,
+        "This can take 10–30 seconds.",
+      ].join("\n"),
       { parse_mode: "HTML" },
     )
 
@@ -181,14 +192,25 @@ export function getBot(): Bot {
       if (result.sent) {
         await ctx.reply(
           [
-            `Swap broadcast on <b>${result.network}</b>.`,
-            `Seqno: ${result.seqno}`,
-            "Track confirmations on tonviewer.com (paste your wallet address).",
+            `<b>✅ Swap complete!</b>`,
+            "",
+            `Swapped <b>${amountStr} ${offer.toUpperCase()}</b> → <b>${ask.toUpperCase()}</b>`,
+            `📡 ${getNetworkDisplay()}`,
+            `🔢 Seqno: ${result.seqno}`,
           ].join("\n"),
           { parse_mode: "HTML" },
         )
       } else {
-        await ctx.reply("Swap was broadcast but didn't confirm in time. Check your wallet shortly.")
+        await ctx.reply(
+          [
+            `<b>⚠️ Transaction pending</b>`,
+            "",
+            `Swapped <b>${amountStr} ${offer.toUpperCase()}</b> → <b>${ask.toUpperCase()}</b>`,
+            "The transaction was broadcast but hasn't confirmed yet.",
+            "Check your wallet balance again shortly.",
+          ].join("\n"),
+          { parse_mode: "HTML" },
+        )
       }
     } catch (err) {
       const msg = (err as Error).message ?? String(err)
