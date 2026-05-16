@@ -80,13 +80,13 @@ export type SwapParams = {
   minAskAmount?: bigint
 }
 
-function toRawAmount(amount: string, decimals: number) {
+export function toRawAmount(amount: string, decimals: number) {
   const [whole, frac = ""] = amount.split(".")
   const padded = (frac + "0".repeat(decimals)).slice(0, decimals)
   return BigInt(whole + padded)
 }
 
-function requiredTonForSwap(offerSymbol: string, askSymbol: string, offerRaw: bigint) {
+export function requiredTonForSwap(offerSymbol: string, askSymbol: string, offerRaw: bigint) {
   // STON.fi recommended gas ranges (docs.ston.fi):
   //   TON → Jetton: 0.15–0.25 TON
   //   Jetton → TON: 0.15–0.25 TON
@@ -100,7 +100,7 @@ function requiredTonForSwap(offerSymbol: string, askSymbol: string, offerRaw: bi
   return { offerPart, gas, buffer, total: offerPart + gas + buffer }
 }
 
-function formatTon(amountNano: bigint) {
+export function formatTon(amountNano: bigint) {
   const sign = amountNano < 0n ? "-" : ""
   const abs = amountNano < 0n ? -amountNano : amountNano
   const whole = abs / 1_000_000_000n
@@ -240,7 +240,7 @@ export const SWAP_NETWORK = getNetwork
 /**
  * Format a raw token amount with the given decimals into a human-readable string.
  */
-function formatTokenAmount(raw: bigint, decimals: number): string {
+export function formatTokenAmount(raw: bigint, decimals: number): string {
   const divisor = BigInt(10 ** decimals)
   const whole = raw / divisor
   const frac = (raw % divisor).toString().padStart(decimals, "0").slice(0, 4)

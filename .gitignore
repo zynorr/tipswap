@@ -9,6 +9,9 @@ node_modules
 .next/
 tsconfig.tsbuildinfo
 
+# Test
+.vitest/
+
 # IDE / OS
 .DS_Store
 
