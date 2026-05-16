@@ -132,6 +132,11 @@ export function getBot(): Bot {
         getJettonBalance(wallet.address, TOKENS.STON.mainnet),
       ])
 
+      // USDT uses 6 decimals, TON/STON use 9
+      const usdtDiv = 1_000_000n
+      const usdtWhole = usdtBal / usdtDiv
+      const usdtFrac = (usdtBal % usdtDiv).toString().padStart(6, "0").slice(0, 4)
+
       const txLink = `https://tonviewer.com/${wallet.address}`
 
       await ctx.reply(
@@ -139,7 +144,7 @@ export function getBot(): Bot {
           `<b>💰 Token Balances</b>`,
           "",
           `TON:   <b>${fromNano(tonBal)}</b>`,
-          `USDT:  <b>${fromNano(usdtBal, 6)}</b>`,
+          `USDT:  <b>${usdtWhole}.${usdtFrac}</b>`,
           `STON:  <b>${fromNano(stonBal)}</b>`,
           "",
           `📡 ${getNetworkDisplay()}`,
