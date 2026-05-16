@@ -124,9 +124,7 @@ export async function executeSwap(params: SwapParams) {
     if (offer.symbol === "TON") {
       lines.push(`Swap amount: ${formatTon(cost.offerPart)} TON`)
     }
-    if (ask.symbol !== "TON") {
-      lines.push(`Gas (STON.fi): ${formatTon(cost.gas)} TON`)
-    }
+    lines.push(`Gas (STON.fi): ${formatTon(cost.gas)} TON`)
     lines.push(`Safety buffer: ${formatTon(cost.buffer)} TON`)
 
     throw new SwapUserError(lines.join("\n"))
