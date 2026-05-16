@@ -51,8 +51,9 @@ export function getBot(): Bot {
 
       await ctx.reply(lines.join("\n"), { parse_mode: "HTML" })
     } catch (err) {
+      const msg = (err as Error).message ?? String(err)
       console.error("[tipswap] /start failed:", err)
-      await ctx.reply("Something went wrong setting up your wallet. Try again in a minute.")
+      await ctx.reply(`Setup failed: ${msg}`)
     }
   })
 
@@ -98,8 +99,9 @@ export function getBot(): Bot {
         { parse_mode: "HTML" },
       )
     } catch (err) {
+      const msg = (err as Error).message ?? String(err)
       console.error("[tipswap] /wallet failed:", err)
-      await ctx.reply("Couldn't fetch your wallet. Try again shortly.")
+      await ctx.reply(`Wallet lookup failed: ${msg}`)
     }
   })
 
@@ -130,8 +132,9 @@ export function getBot(): Bot {
       user = r.user
       wallet = r.wallet
     } catch (err) {
+      const msg = (err as Error).message ?? String(err)
       console.error("[tipswap] /swap user lookup failed:", err)
-      await ctx.reply("Couldn't load your wallet. Try /start first.")
+      await ctx.reply(`Wallet lookup failed: ${msg}`)
       return
     }
 
