@@ -71,10 +71,17 @@ function toRawAmount(amount: string, decimals: number) {
   return BigInt(whole + padded)
 }
 
-function requiredTonForSwap(offerSymbol: string, offerRaw: bigint) {
-  const gas = offerSymbol === "TON" ? toNano("0.25") : toNano("0.3")
+function requiredTonForSwap(offerSymbol: string, askSymbol: string, offerRaw: bigint) {
+  // STON.fi recommended gas ranges (docs.ston.fi):
+  //   TON → Jetton: 0.15–0.25 TON
+  //   Jetton → TON: 0.15–0.25 TON
+  //   Jetton → Jetton: 0.25–0.40 TON
+  const isTonOffer = offerSymbol === "TON"
+  const isTonAsk = askSymbol === "TON"
+  const gas =
+    isTonOffer || isTonAsk ? toNano("0.2") : toNano("0.3")
   const buffer = toNano("0.05")
-  const offerPart = offerSymbol === "TON" ? offerRaw : 0n
+  const offerPart = isTonOffer ? offerRaw : 0n
   return offerPart + gas + buffer
 }
 
@@ -108,7 +115,7 @@ export async function executeSwap(params: SwapParams) {
 
   // Preflight: for any swap we need TON for gas; for TON offers we need offer+gas.
   const tonBalance = await getBalance(params.userAddress)
-  const tonNeeded = requiredTonForSwap(offer.symbol, offerRaw)
+  const tonNeeded = requiredTonForSwap(offer.symbol, ask.symbol, offerRaw)
   if (tonBalance < tonNeeded) {
     throw new SwapUserError(
       `Insufficient TON balance. Need about ${formatTon(tonNeeded)} TON, but wallet has ${formatTon(tonBalance)} TON.`,
@@ -181,11 +188,11 @@ export async function executeSwap(params: SwapParams) {
 
 /**
  * Estimate gas-only TON cost for a swap (rough). Used for confirmation messages.
- * STON.fi recommends ~0.3 TON for jetton swaps.
  */
-export function estimateGasTon(offerSymbol: string) {
-  return offerSymbol.toUpperCase() === "TON" ? 0.25 : 0.3
+export function estimateGasTon(offerSymbol: string, askSymbol: string) {
+  const isTonOffer = offerSymbol.toUpperCase() === "TON"
+  const isTonAsk = askSymbol.toUpperCase() === "TON"
+  return isTonOffer || isTonAsk ? 0.2 : 0.3
 }
 
 export const SWAP_NETWORK = getNetwork
-export const SWAP_GAS_BUFFER = toNano("0.3")
