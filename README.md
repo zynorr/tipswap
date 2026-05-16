@@ -1,6 +1,6 @@
 # TipSwap
 
-A Telegram bot that lets users tip each other in any TON-based token. The sender pays in their preferred token, the recipient receives in theirs, and STON.fi handles the swap atomically in between.
+TipSwap is a Telegram bot that lets anyone tip TON, USDT, STON, or NOT to any user, group, or post — even when sender and recipient hold different tokens. The bot quotes and executes the cross-token swap on STON.fi behind the scenes, so the recipient receives whatever they prefer without ever opening a DEX.
 
 At a high level:
 
