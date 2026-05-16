@@ -8,51 +8,206 @@ TipSwap is a Telegram bot that lets anyone tip TON, USDT, or STON tokens to any 
 
 ## Architecture
 
+### System overview
+
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                        Telegram                             │
-│  User sends /swap 0.1 TON USDT                              │
-└─────────────────────┬───────────────────────────────────────┘
-                      │ HTTPS webhook (X-Telegram-Bot-Api-Secret-Token verified)
-                      ▼
-┌─────────────────────────────────────────────────────────────┐
-│                  Next.js (Vercel)                            │
-│                                                             │
-│  ┌──────────────┐    ┌──────────────────────────────────┐   │
-│  │ /api/bot     │───▶│ grammY command handlers          │   │
-│  │ (webhook RX) │    │  /start  /wallet  /balance       │   │
-│  └──────────────┘    │  /help    /swap                   │   │
-│                      └───────┬──────────────────────────┘   │
-│                              │                              │
-│         ┌────────────────────┼────────────────────┐         │
-│         ▼                    ▼                    ▼         │
-│  ┌───────────┐     ┌──────────────┐     ┌───────────────┐   │
-│  │ Supabase  │     │ TON RPC      │     │ STON.fi SDK   │   │
-│  │ (ledger)  │     │ (TONCenter)  │     │ CPIRouterV2_2 │   │
-│  │           │     │              │     │ + pTON v2.1   │   │
-│  │ users     │     │ balance      │     │               │   │
-│  │ wallets   │     │ seqno        │     │ swap tx       │   │
-│  │ swaps     │     │ broadcast    │     │ construction  │   │
-│  └───────────┘     └──────┬───────┘     └───────┬───────┘   │
-│                           └─────────┬───────────┘           │
-│                                     ▼                      │
-│                            ┌────────────────┐              │
-│                            │ TON Mainnet    │              │
-│                            │ (blockchain)   │              │
-│                            └────────────────┘              │
-└─────────────────────────────────────────────────────────────┘
+╔══════════════════════════════════════════════════════════════════════════════════╗
+║                              PRESENTATION LAYER                                 ║
+╠══════════════════════════════════════════════════════════════════════════════════╣
+║                                                                                 ║
+║  ┌──────────────────────┐           ┌───────────────────────────┐                ║
+║  │     Telegram App      │           │         Browser           │                ║
+║  │  ──────────────────   │           │  ──────────────────────   │                ║
+║  │  Commands:            │           │  /  Landing page          │                ║
+║  │  /start  /wallet      │           │  /admin/setup  dashboard  │                ║
+║  │  /swap   /balance     │           │                           │                ║
+║  │  /help                │           │   Webhook status &        │                ║
+║  └──────────┬────────────┘           │   management UI           │                ║
+║             │                        └──────────────┬────────────┘                ║
+╚═════════════╪═══════════════════════════════════════╪══════════════════════════════╝
+║             │ HTTPS webhook          ┌──────────────┘                             ║
+║             │ X-Telegram-Bot-Api-    │ HTTP GET/POST                              ║
+║             │ Secret-Token verified  │ /api/bot/setup + Authorization: Bearer     ║
+║             ▼                        ▼                                            ║
+║ ╔═════════════════════════════════════════════════════════════════════════════════╗
+║ ║                        APPLICATION LAYER (Next.js / Vercel)                     ║
+║ ╠═════════════════════════════════════════════════════════════════════════════════╣
+║ ║                                                                                 ║
+║ ║  ┌──────────────────┐     ┌────────────────────────────────────┐                ║
+║ ║  │  API Routes       │     │   grammY Bot Handlers              │                ║
+║ ║  │  ────────────     │     │   ─────────────────────────        │                ║
+║ ║  │  /api/bot         │────▶│  /start  → create wallet           │                ║
+║ ║  │   webhook handler │     │  /wallet → show address & TON bal  │                ║
+║ ║  │                   │     │  /balance→ show TON,USDT,STON bal  │                ║
+║ ║  │  /api/bot/setup   │     │  /swap   → preflight→quote→execute│                ║
+║ ║  │   webhook mgmt    │     │  /help   → command reference       │                ║
+║ ║  │                   │     └──────────┬─────────────────────────┘                ║
+║ ║  │  /api/waitlist    │                │                                        ║
+║ ║  │   email signup    │                │                                        ║
+║ ║  └──────────────────┘                │                                         ║
+║ ║                                       │                                         ║
+║ ║               ┌───────────────────────┼───────────────────────────────┐          ║
+║ ║               ▼                       ▼                               ▼          ║
+║ ║  ┌──────────────────────┐  ┌──────────────────────┐  ┌──────────────────────┐   ║
+║ ║  │     lib/bot/users.ts  │  │   lib/wallet/ton.ts  │  │   lib/ston/swap.ts   │   ║
+║ ║  │  ────────────────     │  │  ─────────────────   │  │  ─────────────────   │   ║
+║ ║  │  User/repo queries    │  │  TONClient wrapper   │  │  STON.fi SDK        │   ║
+║ ║  │  Wallet on/off-ramp   │  │  Wallet generation   │  │  CPIRouterV2_2       │   ║
+║ ║  │  Swap audit log       │  │  Balance queries     │  │  Gas estimation      │   ║
+║ ║  │  Mnemonic decrypt     │  │  Seqno polling       │  │  On-chain quote      │   ║
+║ ║  │                       │  │  Tx broadcast        │  │  Tx construction     │   ║
+║ ║  └──────────┬────────────┘  └──────────┬───────────┘  └──────────┬───────────┘   ║
+║ ║             │                          │                          │                ║
+║ ║             ▼                          ▼                          ▼                ║
+║ ║  ┌──────────────────────┐  ┌──────────────────────┐  ┌──────────────────────┐   ║
+║ ║  │   lib/supabase/       │  │ lib/wallet/crypto.ts │  │ Token configuration  │   ║
+║ ║  │  admin.ts (service)   │  │  ─────────────────   │  │ pTON v2.1 wrapper    │   ║
+║ ║  │  client.ts (browser)  │  │  AES-256-GCM        │  │ Router address consts │   ║
+║ ║  │  server.ts (RSC)      │  │  Scrypt key derive  │  │                      │   ║
+║ ║  └──────────────────────┘  └──────────────────────┘  └──────────────────────┘   ║
+║ ╚═════════════════════════════════════════════════════════════════════════════════╝
+║                                                                                    ║
+╚════════════════════════════════════════════════════════════════════════════════════╝
+                          │                     │                        │
+                          ▼                     ▼                        ▼
+┌──────────────────────────────────┐ ┌────────────────────┐ ┌──────────────────────────────────┐
+│  SUPABASE (PostgreSQL, RLS)       │ │   TON BLOCKCHAIN   │ │   STON.fi DEX CONTRACTS         │
+│  ──────────────────────────       │ │   ───────────────  │ │   ──────────────────────────     │
+│                                   │ │                    │ │                                  │
+│  tg_users  (Telegram accounts)    │ │  TONCenter RPC     │ │  CPIRouterV2_2                   │
+│     │ 1:1                          │ │  ───────────────  │ │    ├── CPI Pool (constant prod.) │
+│  tg_wallets (encrypted mnemonics) │ │  getBalance()      │ │    ├── Stable Pool (stable pairs)│
+│     │ 1:N                          │ │  runMethod()      │ │    └── pTON v2.1 (TON wrapping)  │
+│  tg_swaps (swap audit log)        │ │  send()            │ │                                  │
+│                                   │ │  seqno polling     │ │  Pool reserves → quote           │
+│  waitlist (public signups)        │ │                    │ │  Vault → liquidity management    │
+│                                   │ │  (60s seqno polling,     │ │                                  │
+│  RLS: waitlist=anon insert        │ │  5 retry backoff   │ │  @ston-fi/sdk npm package        │
+│       others=service-role only    │ │  on 429s)          │ │                                  │
+└──────────────────────────────────┘ └────────────────────┘ └──────────────────────────────────┘
 ```
 
-**Data flow for a swap:**
+### Swap lifecycle (numbered flow)
 
-1. User sends `/swap 0.1 TON USDT` in a Telegram chat
-2. Telegram delivers the update to `POST /api/bot` with a signed secret token
-3. The grammY bot handler resolves the user and their managed wallet from Supabase
-4. A TON balance preflight checks the wallet has enough TON for gas + swap amount
-5. The STON.fi SDK builds the swap transaction (TON→pTON→Jetton routing via CPIRouterV2_2)
-6. The bot signs and broadcasts the transaction through TONCenter RPC
-7. The bot polls the wallet seqno to confirm the transaction landed
-8. The swap result (seqno, transaction link) is returned to the user in Telegram
+```
+ User                          Bot                          TON RPC        STON.fi       Supabase
+ ────                          ───                          ───────        ───────       ────────
+   │                            │                              │              │              │
+   │  /swap 0.1 TON USDT       │                              │              │              │
+   │───────────────────────────▶│                              │              │              │
+   │                            │                              │              │              │
+   │                            │  ① Resolve user & wallet     │              │              │
+   │                            │───────────────────────────────────────────────────────────▶│
+   │                            │◀────────────────────────────────────────────────────────────│
+   │                            │                              │              │              │
+   │                            │  ② Preflight balance check   │              │              │
+   │                            │─────────────────────────────▶│              │              │
+   │                            │◀─────────────────────────────│              │              │
+   │                            │  (need 0.35 TON, have X)     │              │              │
+   │                            │                              │              │              │
+   │   🔄 Swapping...           │                              │              │              │
+   │◀───────────────────────────│                              │              │              │
+   │                            │                              │              │              │
+   │                            │  ③ Build swap tx params      │              │              │
+   │                            │  (getSwapXxxToYyyTxParams)   │─────────────▶│              │
+   │                            │                              │              │              │
+   │                            │  ④ Quote expected output     │              │              │
+   │                            │  (getPool → getPoolData)     │──(TON RPC)──▶│              │
+   │                            │◀──────────────────────────────│              │              │
+   │                            │                              │              │              │
+   │                            │  ⑤ Sign & broadcast tx       │              │              │
+   │                            │  (WalletContractV4.create)   │─────────────▶│              │
+   │                            │                              │     tx        │              │
+   │                            │                              │─────────────▶│              │
+   │                            │                              │              │              │
+   │                            │  ⑥ Poll seqno (up to 60s)    │              │              │
+   │                            │─────────────────────────────▶│              │              │
+   │                            │◀─────────────────────────────│              │              │
+   │                            │  (new seqno > old seqno)     │              │              │
+   │                            │                              │              │              │
+   │                            │  ⑦ Log swap result           │              │              │
+   │                            │───────────────────────────────────────────────────────────▶│
+   │                            │                              │              │              │
+   │   ✅ Swap complete!        │                              │              │              │
+   │   ≈0.29 USDT received      │                              │              │              │
+   │   Seqno: 42                │                              │              │              │
+   │   🔗 View on tonviewer.com  │                              │              │              │
+   │◀───────────────────────────│                              │              │              │
+   │                            │                              │              │              │
+```
+
+#### Steps in detail
+
+| Step | What happens | Code location | On failure |
+|------|-------------|---------------|------------|
+| ① | Look up or create `tg_user` + `tg_wallet` in Supabase | `lib/bot/users.ts` → `getOrCreateUser()` | Error returned to user |
+| ② | Fetch TON balance from TONCenter; compute `cost = offerPart + gas + buffer`; compare | `lib/ston/swap.ts` → `requiredTonForSwap()` + `lib/wallet/ton.ts` → `getBalance()` | "Insufficient TON balance" with component breakdown |
+| ③ | Call the relevant `getSwap*TxParams` on CPIRouterV2_2 (TON→Jetton, Jetton→TON, or Jetton→Jetton) | `lib/ston/swap.ts` → `executeSwap()` | "Swap route unavailable" or specific DEX error |
+| ④ | Open the pool via `router.getPool()`, read `reserve0`/`reserve1`, compute CPF formula with on-chain fees | `lib/ston/swap.ts` → `getExpectedOut()` | Omitted silently — swap still proceeds |
+| ⑤ | Derive keypair from mnemonic, create `WalletContractV4`, build transfer with `PAY_GAS_SEPARATELY + IGNORE_ERRORS`, send via `TonClient` | `lib/wallet/ton.ts` → `sendInternalMessage()` | Mapped to user-friendly error |
+| ⑥ | Poll `getSeqno()` with 2s intervals until seqno advances or timeout hits 60s | `lib/wallet/ton.ts` → `sendInternalMessage()` polling loop | Status = "sent" or "failed" |
+| ⑦ | Update `tg_swaps.status` + `error` in Supabase | `lib/bot/users.ts` → `updateSwapStatus()` | Logged server-side only |
+
+### Gas cost reference
+
+| Swap path | Gas | Buffer | Swap amount (if TON offer) | Total needed |
+|-----------|-----|--------|---------------------------|--------------|
+| TON → Jetton | 0.2 TON | 0.05 TON | Yes | 0.25 TON + offer amount |
+| Jetton → TON | 0.2 TON | 0.05 TON | No | 0.25 TON |
+| Jetton → Jetton | 0.3 TON | 0.05 TON | No | 0.35 TON |
+
+### Database entity relationships
+
+```
+┌────────────────┐       ┌─────────────────────┐       ┌────────────────────┐
+│    tg_users     │       │     tg_wallets       │       │     tg_swaps       │
+│  ────────────   │       │   ────────────────   │       │   ───────────────  │
+│  id (PK, uuid)  │──1:1──│  id (PK, uuid)       │       │  id (PK, uuid)     │
+│  tg_id (bigint) │       │  user_id (FK → id)   │──1:N──│  user_id (FK → id) │
+│  tg_username    │       │  address (text)      │       │  offer_token       │
+│  first_name     │       │  public_key (text)   │       │  ask_token         │
+│  default_recv   │       │  encrypted_mnemonic  │       │  offer_amount      │
+│  _token         │       │  mode ('managed')    │       │  expected_out      │
+│  created_at     │       │  created_at          │       │  slippage_bps      │
+│  updated_at *   │       └─────────────────────┘       │  tx_hash           │
+└────────────────┘                                      │  status            │
+                                                         │  error             │
+                                                         │  created_at        │
+                                                         │  updated_at *      │
+               ┌────────────────┐                        └────────────────────┘
+               │    waitlist     │
+               │  ────────────   │    * updated_at maintained by
+               │  id (PK, uuid)  │      touch_updated_at() trigger
+               │  email (unique) │
+               │  telegram_      │    RLS summary:
+               │  handle         │      waitlist:  INSERT → anon
+               │  created_at     │      tg_*:      service role only
+               └────────────────┘
+```
+
+### Module dependency graph
+
+```
+  app/api/bot/route.ts           app/api/bot/setup/route.ts    app/page.tsx
+  └── lib/bot/index.ts           └── (env vars only)            └── components/site/*
+       ├── lib/bot/users.ts                                         └── app/api/waitlist
+       │    ├── lib/supabase/admin.ts                                    └── lib/supabase/admin.ts
+       │    ├── lib/wallet/crypto.ts
+       │    └── lib/wallet/ton.ts
+       ├── lib/wallet/ton.ts
+       │    └── (no local deps — uses @ton/ton, @ton/crypto)
+       └── lib/ston/swap.ts
+            └── lib/wallet/ton.ts
+```
+
+**Key architectural decisions:**
+
+- **All bot code is server-only** (`"server-only"` import directive) — never shipped to the browser, never accidentally exposed
+- **Three Supabase clients** — `admin.ts` (service role, bot/setup APIs), `client.ts` (anonymous, SSG/CSR), `server.ts` (authenticated, RSC)
+- **Single Bot instance** — lazily instantiated via `getBot()`; webhook handler passes request to grammY's `webhookCallback()`
+- **Stateless command handlers** — every request fetches fresh state from Supabase + TON RPC; no in-memory session
+- **Best-effort quoting** — on-chain price estimation before broadcast; failure to quote never blocks the swap
+- **Exponential backoff** on TONCenter 429s — 5 retries with 2× delay starting at 600ms
 
 ---
 
