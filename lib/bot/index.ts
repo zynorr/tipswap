@@ -19,12 +19,11 @@ import { getBalance, getJettonBalance, getNetworkDisplay } from "@/lib/wallet/to
 import { executeSwap, resolveToken, TOKENS } from "@/lib/ston/swap"
 import { fromNano } from "@ton/core"
 
-const TOKEN = process.env.TELEGRAM_BOT_TOKEN
-
 let _bot: Bot | null = null
 
 export function getBot(): Bot {
   if (_bot) return _bot
+  const TOKEN = process.env.TELEGRAM_BOT_TOKEN
   if (!TOKEN) throw new Error("TELEGRAM_BOT_TOKEN is not set")
 
   const bot = new Bot(TOKEN)
@@ -177,8 +176,8 @@ export function getBot(): Bot {
     const tgUser = ctx.from
     if (!tgUser) return
 
-    const args = ctx.match?.toString().trim().split(/\s+/) ?? []
-    if (args.length !== 3) {
+    const args = (ctx.match?.[3] ?? "").trim().split(/\s+/) ?? []
+    if (args.length !== 3 || args[0] === "") {
       await ctx.reply("Usage: /swap <amount> <from> <to>\nexample: /swap 0.1 TON USDT")
       return
     }
