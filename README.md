@@ -186,6 +186,8 @@ The setup/inspection API (`GET|POST /api/bot/setup`) requires `Authorization: Be
 
 For the full Vercel Hobby checklist, see [`docs/production-vercel.md`](docs/production-vercel.md).
 
+For a non-technical Telegram testing walkthrough, see [`docs/telegram-user-test-guide.md`](docs/telegram-user-test-guide.md).
+
 ---
 
 ## Operational notes

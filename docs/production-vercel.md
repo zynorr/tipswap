@@ -119,6 +119,8 @@ Reaction tips only work for group messages the bot sees after being added to the
 
 Use two Telegram accounts.
 
+For the full normal-user walkthrough, use `docs/telegram-user-test-guide.md`.
+
 From both:
 
 ```text
