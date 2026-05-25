@@ -6,6 +6,7 @@ import {
   formatTon,
   formatTokenAmount,
   estimateGasTon,
+  applySlippage,
   TOKENS,
 } from "@/lib/ston/swap"
 
@@ -16,7 +17,7 @@ describe("resolveToken", () => {
     const t = resolveToken("TON")
     expect(t.symbol).toBe("TON")
     expect(t.decimals).toBe(9)
-    expect(t.mainnet).toBe("TON")
+    expect(t.mainnet).toBe("EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c")
   })
 
   it("resolves USDT with 6 decimals", () => {
@@ -163,6 +164,23 @@ describe("formatTokenAmount", () => {
 
   it("handles zero", () => {
     expect(formatTokenAmount(0n, 6)).toBe("0.0000")
+  })
+})
+
+// ─── applySlippage ─────────────────────────────────────────────────
+
+describe("applySlippage", () => {
+  it("applies basis-point slippage to raw output", () => {
+    expect(applySlippage(1_000_000n, 100)).toBe(990_000n)
+  })
+
+  it("allows zero slippage", () => {
+    expect(applySlippage(1_000_000n, 0)).toBe(1_000_000n)
+  })
+
+  it("rejects invalid slippage", () => {
+    expect(() => applySlippage(1_000_000n, -1)).toThrow(/Slippage/)
+    expect(() => applySlippage(1_000_000n, 5001)).toThrow(/Slippage/)
   })
 })
 

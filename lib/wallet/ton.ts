@@ -14,7 +14,7 @@
 import "server-only"
 import { mnemonicNew, mnemonicToWalletKey } from "@ton/crypto"
 import { WalletContractV4, TonClient, internal, SendMode } from "@ton/ton"
-import { Address, beginCell, type Cell } from "@ton/core"
+import { Address, beginCell, external, storeMessage, type Cell } from "@ton/core"
 
 const ENDPOINTS = {
   mainnet: "https://toncenter.com/api/v2/jsonRPC",
@@ -193,7 +193,18 @@ export async function sendInternalMessage(params: {
       ],
     })
 
-    await withRateLimitRetry(() => contract.send(transfer))
+    const externalMessage = external({
+      to: wallet.address,
+      init: contract.init,
+      body: transfer,
+    })
+    const txHash = beginCell()
+      .store(storeMessage(externalMessage))
+      .endCell()
+      .hash()
+      .toString("hex")
+
+    await withRateLimitRetry(() => client.sendMessage(externalMessage))
 
     // Wait for seqno to advance — that confirms the wallet processed the tx
     let attempts = 0
@@ -201,13 +212,40 @@ export async function sendInternalMessage(params: {
       await new Promise((r) => setTimeout(r, 2000))
       const newSeqno = await withRateLimitRetry(() => contract.getSeqno())
       if (newSeqno > seqno) {
-        return { sent: true, seqno: newSeqno }
+        return { sent: true, seqno: newSeqno, txHash }
       }
       attempts++
     }
 
-    return { sent: false, seqno }
+    return { sent: false, seqno, txHash }
   } catch (err) {
     throw mapTonRpcError(err, "swap transaction broadcast")
   }
+}
+
+export async function sendTonTransfer(params: {
+  mnemonic: string
+  to: string
+  amount: bigint
+}) {
+  const buffer = 50_000_000n
+  const balance = await getBalance((await deriveWalletFromMnemonic(params.mnemonic)).wallet.address.toString({ bounceable: false, testOnly: false }))
+  if (balance < params.amount + buffer) {
+    throw new Error(
+      `Insufficient TON balance. Need ${fromNanoLike(params.amount + buffer)} TON including gas buffer, wallet has ${fromNanoLike(balance)} TON.`,
+    )
+  }
+
+  return await sendInternalMessage({
+    mnemonic: params.mnemonic,
+    to: params.to,
+    value: params.amount,
+    bounce: false,
+  })
+}
+
+function fromNanoLike(amountNano: bigint) {
+  const whole = amountNano / 1_000_000_000n
+  const frac = (amountNano % 1_000_000_000n).toString().padStart(9, "0").slice(0, 4)
+  return `${whole}.${frac}`
 }

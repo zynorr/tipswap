@@ -6,6 +6,7 @@ const ORIG_ENV = process.env
 
 beforeEach(() => {
   process.env = { ...ORIG_ENV, TELEGRAM_BOT_TOKEN: "fake:test-token" }
+  vi.clearAllMocks()
 })
 
 afterEach(() => {
@@ -20,6 +21,9 @@ vi.mock("@/lib/wallet/ton", () => ({
   getNetworkDisplay: vi.fn(() => "TON Mainnet"),
 }))
 import { getBalance, getJettonBalance } from "@/lib/wallet/ton"
+
+const mockGetBalance = vi.mocked(getBalance)
+const mockGetJettonBalance = vi.mocked(getJettonBalance)
 
 vi.mock("@/lib/ston/swap", () => ({
   resolveToken: vi.fn((symbol: string) => {
@@ -45,8 +49,14 @@ vi.mock("@/lib/ston/swap", () => ({
     STON: { mainnet: "EQA2kCVNwVsil2EM2mB0SkXytxCqQjS4mttjDpnXmwG9T6bO", decimals: 9 },
   },
   executeSwap: vi.fn(),
+  quoteTipSwap: vi.fn(),
+  executeTipSwap: vi.fn(),
 }))
-import { executeSwap } from "@/lib/ston/swap"
+import { executeSwap, executeTipSwap, quoteTipSwap } from "@/lib/ston/swap"
+
+const mockExecuteSwap = vi.mocked(executeSwap)
+const mockQuoteTipSwap = vi.mocked(quoteTipSwap)
+const mockExecuteTipSwap = vi.mocked(executeTipSwap)
 
 vi.mock("@/lib/wallet/crypto", () => ({
   decryptString: vi.fn(() => "test mnemonic phrase"),
@@ -58,8 +68,77 @@ vi.mock("../users", () => ({
   decryptMnemonic: vi.fn(() => "test mnemonic phrase"),
   logSwap: vi.fn(() => ({ id: "swap-log-1" })),
   updateSwapStatus: vi.fn(),
+  connectExternalWallet: vi.fn(),
+  getManagedWallet: vi.fn(),
+  setActiveWallet: vi.fn(),
+  updateUserPreferences: vi.fn(),
+  findUserByUsername: vi.fn(),
+  getActiveWallet: vi.fn(),
+  getTipById: vi.fn(),
+  getTipsByBatchId: vi.fn(),
+  getTipBatchById: vi.fn(),
+  getUserById: vi.fn(),
+  getUserByTgId: vi.fn(),
+  createTipBatch: vi.fn(),
+  createTipQuote: vi.fn(),
+  claimTipForSend: vi.fn(),
+  claimTipBatchForSend: vi.fn(),
+  updateTipStatus: vi.fn(),
+  updateTipBatchStatus: vi.fn(),
+  recordGroupMessage: vi.fn(),
+  getGroupMessageAuthor: vi.fn(),
+  getRecentTipsForUser: vi.fn(),
+  getRecentSwapsForUser: vi.fn(),
 }))
-import { getOrCreateUser, logSwap } from "../users"
+import {
+  getOrCreateUser,
+  updateSwapStatus,
+  connectExternalWallet,
+  getManagedWallet,
+  setActiveWallet,
+  updateUserPreferences,
+  findUserByUsername,
+  getActiveWallet,
+  getTipById,
+  getTipsByBatchId,
+  getTipBatchById,
+  getUserById,
+  getUserByTgId,
+  createTipBatch,
+  createTipQuote,
+  claimTipForSend,
+  claimTipBatchForSend,
+  updateTipStatus,
+  updateTipBatchStatus,
+  recordGroupMessage,
+  getGroupMessageAuthor,
+  getRecentTipsForUser,
+  getRecentSwapsForUser,
+} from "../users"
+
+const mockGetOrCreateUser = vi.mocked(getOrCreateUser)
+const mockUpdateSwapStatus = vi.mocked(updateSwapStatus)
+const mockConnectExternalWallet = vi.mocked(connectExternalWallet)
+const mockGetManagedWallet = vi.mocked(getManagedWallet)
+const mockSetActiveWallet = vi.mocked(setActiveWallet)
+const mockUpdateUserPreferences = vi.mocked(updateUserPreferences)
+const mockFindUserByUsername = vi.mocked(findUserByUsername)
+const mockGetActiveWallet = vi.mocked(getActiveWallet)
+const mockGetTipById = vi.mocked(getTipById)
+const mockGetTipsByBatchId = vi.mocked(getTipsByBatchId)
+const mockGetTipBatchById = vi.mocked(getTipBatchById)
+const mockGetUserById = vi.mocked(getUserById)
+const mockGetUserByTgId = vi.mocked(getUserByTgId)
+const mockCreateTipBatch = vi.mocked(createTipBatch)
+const mockCreateTipQuote = vi.mocked(createTipQuote)
+const mockClaimTipForSend = vi.mocked(claimTipForSend)
+const mockClaimTipBatchForSend = vi.mocked(claimTipBatchForSend)
+const mockUpdateTipStatus = vi.mocked(updateTipStatus)
+const mockUpdateTipBatchStatus = vi.mocked(updateTipBatchStatus)
+const mockRecordGroupMessage = vi.mocked(recordGroupMessage)
+const mockGetGroupMessageAuthor = vi.mocked(getGroupMessageAuthor)
+const mockGetRecentTipsForUser = vi.mocked(getRecentTipsForUser)
+const mockGetRecentSwapsForUser = vi.mocked(getRecentSwapsForUser)
 
 // ─── Mock grammY and set up handler capture ──────────────────────
 // vi.mock factories are hoisted above module-scoped code, so we
@@ -67,15 +146,30 @@ import { getOrCreateUser, logSwap } from "../users"
 
 type Ctx = {
   from: { id: number; username?: string; first_name?: string }
-  match: RegExpExecArray | null
+  match: unknown
   reply: ReturnType<typeof vi.fn>
+  answerCallbackQuery?: ReturnType<typeof vi.fn>
+  editMessageText?: ReturnType<typeof vi.fn>
+  api?: { sendMessage: ReturnType<typeof vi.fn> }
 }
 
 type Handler = (ctx: Ctx) => Promise<void>
 
 vi.mock("grammy", () => {
   const handlerMap = new Map<string, (ctx: any) => Promise<void>>()
+  const callbackHandlers: Array<{
+    matcher: RegExp
+    handler: (ctx: any) => Promise<void>
+  }> = []
+  const onHandlers = new Map<string, (ctx: any, next: () => Promise<void>) => Promise<void>>()
+  const reactionHandlers: Array<{
+    reactions: string[]
+    handler: (ctx: any) => Promise<void>
+  }> = []
   ;(globalThis as any).__grammyHandlers = handlerMap
+  ;(globalThis as any).__grammyCallbackHandlers = callbackHandlers
+  ;(globalThis as any).__grammyOnHandlers = onHandlers
+  ;(globalThis as any).__grammyReactionHandlers = reactionHandlers
 
   return {
     Bot: class MockBot {
@@ -83,13 +177,53 @@ vi.mock("grammy", () => {
       command(cmd: string, handler: (ctx: any) => Promise<void>) {
         handlerMap.set(cmd, handler)
       }
+      callbackQuery(matcher: RegExp, handler: (ctx: any) => Promise<void>) {
+        callbackHandlers.push({ matcher, handler })
+      }
+      on(event: string, handler: (ctx: any, next: () => Promise<void>) => Promise<void>) {
+        onHandlers.set(event, handler)
+      }
+      reaction(reactions: string[], handler: (ctx: any) => Promise<void>) {
+        reactionHandlers.push({ reactions, handler })
+      }
       catch() {}
+    },
+    InlineKeyboard: class MockInlineKeyboard {
+      buttons: Array<{ text: string; data: string }> = []
+      text(text: string, data: string) {
+        this.buttons.push({ text, data })
+        return this
+      }
     },
   }
 })
 
 function getRegisteredHandlers(): Map<string, Handler> {
   return (globalThis as any).__grammyHandlers as Map<string, Handler>
+}
+
+function getRegisteredCallbackHandlers(): Array<{
+  matcher: RegExp
+  handler: Handler
+}> {
+  return (globalThis as any).__grammyCallbackHandlers as Array<{
+    matcher: RegExp
+    handler: Handler
+  }>
+}
+
+function getRegisteredOnHandlers(): Map<string, (ctx: any, next: () => Promise<void>) => Promise<void>> {
+  return (globalThis as any).__grammyOnHandlers as Map<string, (ctx: any, next: () => Promise<void>) => Promise<void>>
+}
+
+function getRegisteredReactionHandlers(): Array<{
+  reactions: string[]
+  handler: Handler
+}> {
+  return (globalThis as any).__grammyReactionHandlers as Array<{
+    reactions: string[]
+    handler: Handler
+  }>
 }
 
 // ─── Import after mocks are set up ────────────────────────────────
@@ -116,44 +250,151 @@ function makeCtx(overrides: {
 }): Ctx {
   const { command = "swap", argsText = "", from = { id: 12345, username: "testuser", first_name: "Test" } } = overrides
 
-  const fullText = argsText ? `/${command} ${argsText}` : `/${command}`
-  const match = fullText.match(
-    /^\/([^\s@]+)(?:@(\S+))?\s*((?:[\s\S])*)?$/,
-  ) as RegExpExecArray | null
-
   return {
     from,
-    match,
+    match: argsText,
     reply: vi.fn().mockResolvedValue(undefined),
   }
 }
 
-/**
- * Simulate the grammY command regex match more explicitly.
- * For a message "/swap 0.5 TON USDT":
- *   match[0] = "/swap 0.5 TON USDT"
- *   match[1] = "swap"
- *   match[2] = undefined
- *   match[3] = "0.5 TON USDT"
- */
-function createMatch(
-  command: string,
-  argsText: string | undefined,
-): RegExpExecArray {
-  const text = argsText !== undefined ? `/${command} ${argsText}` : `/${command}`
-  const re = /^\/([^\s@]+)(?:@(\S+))?\s*((?:[\s\S])*)?$/
-  return re.exec(text) as RegExpExecArray
+const managedWallet = {
+  id: "wallet-1",
+  user_id: "user-1",
+  address: "EQDabc123",
+  public_key: "0x...",
+  encrypted_mnemonic: "...",
+  mode: "managed" as const,
+  is_active: true,
+}
+
+const externalWallet = {
+  id: "wallet-2",
+  user_id: "user-1",
+  address: "UQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJKZ",
+  public_key: null,
+  encrypted_mnemonic: null,
+  mode: "external" as const,
+  is_active: true,
+}
+
+const mockUser = {
+  id: "user-1",
+  tg_id: 12345,
+  tg_username: "testuser",
+  first_name: "Test",
+  default_recv_token: "USDT",
+  reaction_tip_amount: "1",
+  reaction_recv_token: "USDT",
+  reaction_pay_token: "TON",
+}
+
+const recipientUser = {
+  id: "user-2",
+  tg_id: 67890,
+  tg_username: "alice",
+  first_name: "Alice",
+  default_recv_token: "USDT",
+  reaction_tip_amount: "1",
+  reaction_recv_token: "USDT",
+  reaction_pay_token: "TON",
+}
+
+const recipientWallet = {
+  id: "wallet-3",
+  user_id: "user-2",
+  address: "UQA7f7c1zn0J08RKt8WPXcXlnZLAtcN22UsFdcvaQqYU8AS8",
+  public_key: null,
+  encrypted_mnemonic: null,
+  mode: "external" as const,
+  is_active: true,
+}
+
+const recipientTwoUser = {
+  id: "user-3",
+  tg_id: 24680,
+  tg_username: "bobuser",
+  first_name: "Bob",
+  default_recv_token: "USDT",
+  reaction_tip_amount: "1",
+  reaction_recv_token: "USDT",
+  reaction_pay_token: "TON",
+}
+
+const recipientTwoWallet = {
+  id: "wallet-4",
+  user_id: "user-3",
+  address: "UQCbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  public_key: null,
+  encrypted_mnemonic: null,
+  mode: "external" as const,
+  is_active: true,
+}
+
+const tipRow = {
+  id: "11111111-1111-4111-8111-111111111111",
+  batch_id: null,
+  sender_user_id: "user-1",
+  recipient_user_id: "user-2",
+  source: "command" as const,
+  source_chat_id: null,
+  source_message_id: null,
+  sender_wallet_id: "wallet-1",
+  recipient_wallet_id: "wallet-3",
+  recipient_address: recipientWallet.address,
+  offer_token: "TON",
+  ask_token: "USDT",
+  ask_amount: "5",
+  ask_raw: "5000000",
+  quoted_offer_amount: "2.5000",
+  offer_raw: "2500000000",
+  expected_out: "5.0000",
+  min_ask_amount: "4950000",
+  slippage_bps: 100,
+  status: "quoted" as const,
+  tx_hash: null,
+  error: null,
+  expires_at: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+  created_at: new Date().toISOString(),
+  updated_at: new Date().toISOString(),
+}
+
+const tipRowTwo = {
+  ...tipRow,
+  id: "33333333-3333-4333-8333-333333333333",
+  batch_id: "22222222-2222-4222-8222-222222222222",
+  recipient_user_id: "user-3",
+  recipient_wallet_id: "wallet-4",
+  recipient_address: recipientTwoWallet.address,
+}
+
+const batchRow = {
+  id: "22222222-2222-4222-8222-222222222222",
+  sender_user_id: "user-1",
+  source: "command" as const,
+  offer_token: "TON",
+  ask_token: "USDT",
+  ask_amount: "5",
+  recipient_count: 2,
+  quoted_total_offer_amount: "5.0000",
+  status: "quoted" as const,
+  error: null,
+  expires_at: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+  created_at: new Date().toISOString(),
+  updated_at: new Date().toISOString(),
 }
 
 // ─── Tests ────────────────────────────────────────────────────────
 
 describe("bot command registration", () => {
-  it("registers all five command handlers", () => {
+  it("registers all command handlers", () => {
     getBot()
     const handlers = getRegisteredHandlers()
-    for (const cmd of ["start", "help", "wallet", "balance", "swap"]) {
+    for (const cmd of ["start", "help", "wallet", "balance", "connect", "managed", "swap", "tip", "receive", "settip", "settings", "history"]) {
       expect(handlers.has(cmd)).toBe(true)
     }
+    expect(getRegisteredCallbackHandlers()).toHaveLength(1)
+    expect(getRegisteredOnHandlers().has("message")).toBe(true)
+    expect(getRegisteredReactionHandlers()).toHaveLength(1)
   })
 })
 
@@ -260,9 +501,9 @@ describe("/swap — token validation", () => {
     handler = getRegisteredHandlers().get("swap")!
 
     // getOrCreateUser returns a valid user/wallet so we reach the resolveToken step
-    ;(getOrCreateUser as ReturnType<typeof vi.fn>).mockResolvedValue({
-      user: { id: "user-1", tg_id: 12345, tg_username: "testuser", first_name: "Test", default_recv_token: "USDT" },
-      wallet: { id: "wallet-1", user_id: "user-1", address: "EQD...", public_key: "0x...", encrypted_mnemonic: "..." },
+    mockGetOrCreateUser.mockResolvedValue({
+      user: mockUser,
+      wallet: { ...managedWallet, address: "EQD..." },
       created: false,
     })
   })
@@ -285,6 +526,14 @@ describe("/swap — token validation", () => {
       expect.stringContaining("Unknown token: ETH"),
     )
   })
+
+  it("rejects swaps where offer and ask token are the same", async () => {
+    const ctx = makeCtx({ command: "swap", argsText: "0.5 TON TON" })
+    await handler(ctx)
+    expect(ctx.reply).toHaveBeenCalledWith(
+      expect.stringContaining("Offer and ask tokens must be different"),
+    )
+  })
 })
 
 describe("/swap — flow with mocked dependencies", () => {
@@ -297,17 +546,21 @@ describe("/swap — flow with mocked dependencies", () => {
 
   it("replies with 'swapping' status and then success message on completion", async () => {
     // Set up user lookup mock
-    ;(getOrCreateUser as ReturnType<typeof vi.fn>).mockResolvedValue({
-      user: { id: "user-1", tg_id: 12345, tg_username: "testuser", first_name: "Test", default_recv_token: "USDT" },
-      wallet: { id: "wallet-1", user_id: "user-1", address: "EQDabc123", public_key: "0x...", encrypted_mnemonic: "..." },
+    mockGetOrCreateUser.mockResolvedValue({
+      user: mockUser,
+      wallet: managedWallet,
       created: false,
     })
 
     // Set up swap execution mock
-    ;(executeSwap as ReturnType<typeof vi.fn>).mockResolvedValue({
+    mockExecuteSwap.mockResolvedValue({
       sent: true,
       seqno: 42,
       expectedOut: "0.2891",
+      expectedRaw: "289100",
+      minAskAmount: "286209",
+      offerRaw: "500000000",
+      txHash: "abc123",
       network: "mainnet",
     })
 
@@ -334,19 +587,31 @@ describe("/swap — flow with mocked dependencies", () => {
     expect(successCall).toContain("USDT")
     expect(successCall).toContain("Seqno: 42")
     expect(successCall).toContain("tonviewer.com")
+    expect(mockUpdateSwapStatus).toHaveBeenCalledWith(
+      "swap-log-1",
+      expect.objectContaining({
+        status: "sent",
+        expectedOut: "0.2891",
+        txHash: "abc123",
+      }),
+    )
   })
 
   it("replies with failure message when swap fails to broadcast", async () => {
-    ;(getOrCreateUser as ReturnType<typeof vi.fn>).mockResolvedValue({
-      user: { id: "user-1", tg_id: 12345, tg_username: "testuser", first_name: "Test", default_recv_token: "USDT" },
-      wallet: { id: "wallet-1", user_id: "user-1", address: "EQDabc123", public_key: "0x...", encrypted_mnemonic: "..." },
+    mockGetOrCreateUser.mockResolvedValue({
+      user: mockUser,
+      wallet: managedWallet,
       created: false,
     })
 
-    ;(executeSwap as ReturnType<typeof vi.fn>).mockResolvedValue({
+    mockExecuteSwap.mockResolvedValue({
       sent: false,
       seqno: 41,
-      expectedOut: null,
+      expectedOut: "0.2891",
+      expectedRaw: "289100",
+      minAskAmount: "286209",
+      offerRaw: "500000000",
+      txHash: "def456",
       network: "mainnet",
     })
 
@@ -369,13 +634,13 @@ describe("/swap — flow with mocked dependencies", () => {
   })
 
   it("replies with swap failure message on error", async () => {
-    ;(getOrCreateUser as ReturnType<typeof vi.fn>).mockResolvedValue({
-      user: { id: "user-1", tg_id: 12345, tg_username: "testuser", first_name: "Test", default_recv_token: "USDT" },
-      wallet: { id: "wallet-1", user_id: "user-1", address: "EQDabc123", public_key: "0x...", encrypted_mnemonic: "..." },
+    mockGetOrCreateUser.mockResolvedValue({
+      user: mockUser,
+      wallet: managedWallet,
       created: false,
     })
 
-    ;(executeSwap as ReturnType<typeof vi.fn>).mockRejectedValue(
+    mockExecuteSwap.mockRejectedValue(
       new Error("TON RPC: status code 500"),
     )
 
@@ -393,6 +658,583 @@ describe("/swap — flow with mocked dependencies", () => {
     expect(ctx.reply).toHaveBeenNthCalledWith(
       2,
       expect.stringContaining("Swap failed: TON RPC: status code 500"),
+    )
+  })
+
+  it("does not execute swaps when the active wallet is external", async () => {
+    mockGetOrCreateUser.mockResolvedValue({
+      user: mockUser,
+      wallet: externalWallet,
+      created: false,
+    })
+    mockGetManagedWallet.mockResolvedValue(managedWallet)
+
+    const ctx = makeCtx({ command: "swap", argsText: "0.5 TON USDT" })
+    await handler(ctx)
+
+    expect(ctx.reply).toHaveBeenCalledWith(
+      expect.stringContaining("active wallet is external"),
+      expect.objectContaining({ parse_mode: "HTML" }),
+    )
+    expect(mockExecuteSwap).not.toHaveBeenCalled()
+  })
+})
+
+// ─── /tip command and confirmation flow ──────────────────────────
+
+describe("/tip — quote flow", () => {
+  let handler: Handler
+
+  beforeEach(() => {
+    getBot()
+    handler = getRegisteredHandlers().get("tip")!
+
+    mockGetOrCreateUser.mockResolvedValue({
+      user: mockUser,
+      wallet: managedWallet,
+      created: false,
+    })
+    mockFindUserByUsername.mockResolvedValue(recipientUser)
+    mockGetActiveWallet.mockResolvedValue(recipientWallet)
+    mockQuoteTipSwap.mockResolvedValue({
+      offerSymbol: "TON",
+      askSymbol: "USDT",
+      askAmount: "5",
+      askRaw: "5000000",
+      quotedOfferAmount: "2.5000",
+      offerRaw: "2500000000",
+      expectedOut: "5.0000",
+      expectedRaw: "5000000",
+      minAskAmount: "4950000",
+      slippageBps: 100,
+      routerVersion: "v2.2",
+      network: "mainnet",
+    })
+    mockCreateTipQuote.mockResolvedValue(tipRow)
+  })
+
+  it("replies with usage for invalid syntax", async () => {
+    const ctx = makeCtx({ command: "tip", argsText: "5 USDT TON @alice" })
+    await handler(ctx)
+
+    expect(ctx.reply).toHaveBeenCalledWith(expect.stringContaining("/tip <amount>"))
+    expect(mockQuoteTipSwap).not.toHaveBeenCalled()
+  })
+
+  it("creates a tip quote and returns confirm/cancel buttons", async () => {
+    const ctx = makeCtx({ command: "tip", argsText: "5 USDT from TON @alice" })
+    await handler(ctx)
+
+    expect(mockFindUserByUsername).toHaveBeenCalledWith("alice")
+    expect(mockGetActiveWallet).toHaveBeenCalledWith("user-2")
+    expect(mockQuoteTipSwap).toHaveBeenCalledWith({
+      offer: "TON",
+      ask: "USDT",
+      askAmount: "5",
+      slippageBps: 100,
+    })
+    expect(mockCreateTipQuote).toHaveBeenCalledWith(
+      expect.objectContaining({
+        senderUserId: "user-1",
+        recipientUserId: "user-2",
+        recipientAddress: recipientWallet.address,
+        offerToken: "TON",
+        askToken: "USDT",
+        askAmount: "5",
+      }),
+    )
+    expect(ctx.reply).toHaveBeenCalledWith(
+      expect.stringContaining("Confirm tip"),
+      expect.objectContaining({
+        parse_mode: "HTML",
+        reply_markup: expect.objectContaining({
+          buttons: expect.arrayContaining([
+            { text: "Confirm", data: `tip:confirm:${tipRow.id}` },
+            { text: "Cancel", data: `tip:cancel:${tipRow.id}` },
+          ]),
+        }),
+      }),
+    )
+  })
+
+  it("accepts the site syntax and defaults the pay token to TON", async () => {
+    const ctx = makeCtx({ command: "tip", argsText: "5 USDT @alice" })
+    await handler(ctx)
+
+    expect(mockQuoteTipSwap).toHaveBeenCalledWith({
+      offer: "TON",
+      ask: "USDT",
+      askAmount: "5",
+      slippageBps: 100,
+    })
+    expect(mockCreateTipQuote).toHaveBeenCalledWith(
+      expect.objectContaining({
+        offerToken: "TON",
+        askToken: "USDT",
+        askAmount: "5",
+      }),
+    )
+  })
+
+  it("creates a batch quote for multiple recipients", async () => {
+    mockFindUserByUsername.mockImplementation(async (username: string) => {
+      if (username === "alice") return recipientUser
+      if (username === "bobuser") return recipientTwoUser
+      return null
+    })
+    mockGetActiveWallet.mockImplementation(async (userId: string) => {
+      if (userId === "user-2") return recipientWallet
+      if (userId === "user-3") return recipientTwoWallet
+      throw new Error("missing wallet")
+    })
+    mockCreateTipBatch.mockResolvedValue(batchRow)
+    mockCreateTipQuote
+      .mockResolvedValueOnce({ ...tipRow, batch_id: batchRow.id })
+      .mockResolvedValueOnce(tipRowTwo)
+
+    const ctx = makeCtx({ command: "tip", argsText: "5 USDT @alice @bobuser" })
+    await handler(ctx)
+
+    expect(mockQuoteTipSwap).toHaveBeenCalledTimes(2)
+    expect(mockCreateTipBatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        senderUserId: "user-1",
+        source: "command",
+        offerToken: "TON",
+        askToken: "USDT",
+        askAmount: "5",
+        recipientCount: 2,
+        quotedTotalOfferAmount: "5.0000",
+      }),
+    )
+    expect(mockCreateTipQuote).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ batchId: batchRow.id, recipientUserId: "user-2" }),
+    )
+    expect(mockCreateTipQuote).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ batchId: batchRow.id, recipientUserId: "user-3" }),
+    )
+    expect(ctx.reply).toHaveBeenCalledWith(
+      expect.stringContaining("Recipients: <b>2</b>"),
+      expect.objectContaining({
+        reply_markup: expect.objectContaining({
+          buttons: expect.arrayContaining([
+            { text: "Confirm", data: `tipbatch:confirm:${batchRow.id}` },
+            { text: "Cancel", data: `tipbatch:cancel:${batchRow.id}` },
+          ]),
+        }),
+      }),
+    )
+  })
+
+  it("does not quote when the active wallet is external", async () => {
+    mockGetOrCreateUser.mockResolvedValue({
+      user: mockUser,
+      wallet: externalWallet,
+      created: false,
+    })
+    mockGetManagedWallet.mockResolvedValue(managedWallet)
+
+    const ctx = makeCtx({ command: "tip", argsText: "5 USDT from TON @alice" })
+    await handler(ctx)
+
+    expect(ctx.reply).toHaveBeenCalledWith(
+      expect.stringContaining("active wallet is external"),
+      expect.objectContaining({ parse_mode: "HTML" }),
+    )
+    expect(mockQuoteTipSwap).not.toHaveBeenCalled()
+  })
+
+  it("requires the recipient to be registered", async () => {
+    mockFindUserByUsername.mockResolvedValue(null)
+
+    const ctx = makeCtx({ command: "tip", argsText: "5 USDT from TON @alice" })
+    await handler(ctx)
+
+    expect(ctx.reply).toHaveBeenCalledWith(
+      expect.stringContaining("@alice needs to start TipSwap first"),
+    )
+    expect(mockQuoteTipSwap).not.toHaveBeenCalled()
+  })
+})
+
+describe("/tip callback — confirm/cancel", () => {
+  let handler: Handler
+
+  function makeCallbackCtx(action: "confirm" | "cancel", row = tipRow): Ctx {
+    return {
+      from: { id: 12345, username: "testuser", first_name: "Test" },
+      match: [`tip:${action}:${row.id}`, "tip", action, row.id],
+      reply: vi.fn().mockResolvedValue(undefined),
+      answerCallbackQuery: vi.fn().mockResolvedValue(undefined),
+      editMessageText: vi.fn().mockResolvedValue(undefined),
+      api: { sendMessage: vi.fn().mockResolvedValue(undefined) },
+    }
+  }
+
+  beforeEach(() => {
+    getBot()
+    handler = getRegisteredCallbackHandlers()[0].handler
+
+    mockGetTipById.mockResolvedValue(tipRow)
+    mockGetUserById.mockImplementation(async (id: string) => {
+      if (id === "user-1") return mockUser
+      if (id === "user-2") return recipientUser
+      return null
+    })
+    mockClaimTipForSend.mockResolvedValue({ ...tipRow, status: "sending" })
+    mockGetManagedWallet.mockResolvedValue(managedWallet)
+    mockExecuteTipSwap.mockResolvedValue({
+      sent: true,
+      seqno: 44,
+      offerAmount: "2.5000",
+      offerRaw: "2500000000",
+      expectedOut: "5.0000",
+      expectedRaw: "5000000",
+      askRaw: "5000000",
+      minAskAmount: "4950000",
+      slippageBps: 100,
+      txHash: "tip-tx",
+      network: "mainnet",
+    })
+  })
+
+  it("cancels a quoted tip", async () => {
+    const ctx = makeCallbackCtx("cancel")
+    await handler(ctx)
+
+    expect(mockUpdateTipStatus).toHaveBeenCalledWith(tipRow.id, {
+      status: "cancelled",
+    })
+    expect(ctx.editMessageText).toHaveBeenCalledWith(
+      expect.stringContaining("Tip cancelled"),
+      expect.objectContaining({ parse_mode: "HTML" }),
+    )
+    expect(mockExecuteTipSwap).not.toHaveBeenCalled()
+  })
+
+  it("executes a confirmed tip and notifies the recipient", async () => {
+    const ctx = makeCallbackCtx("confirm")
+    await handler(ctx)
+
+    expect(mockClaimTipForSend).toHaveBeenCalledWith(tipRow.id)
+    expect(mockExecuteTipSwap).toHaveBeenCalledWith({
+      mnemonic: "test mnemonic phrase",
+      senderAddress: managedWallet.address,
+      recipientAddress: recipientWallet.address,
+      offer: "TON",
+      ask: "USDT",
+      askAmount: "5",
+      slippageBps: 100,
+    })
+    expect(mockUpdateTipStatus).toHaveBeenCalledWith(
+      tipRow.id,
+      expect.objectContaining({
+        status: "sent",
+        expectedOut: "5.0000",
+        txHash: "tip-tx",
+      }),
+    )
+    expect(ctx.editMessageText).toHaveBeenCalledWith(
+      expect.stringContaining("Tip sent"),
+      expect.objectContaining({ parse_mode: "HTML" }),
+    )
+    expect(ctx.api?.sendMessage).toHaveBeenCalledWith(
+      67890,
+      expect.stringContaining("You received a tip"),
+      expect.objectContaining({ parse_mode: "HTML" }),
+    )
+  })
+
+  it("rejects callbacks from non-senders", async () => {
+    mockGetUserById.mockResolvedValue({ ...mockUser, tg_id: 99999 })
+
+    const ctx = makeCallbackCtx("confirm")
+    await handler(ctx)
+
+    expect(ctx.answerCallbackQuery).toHaveBeenCalledWith(
+      expect.objectContaining({ show_alert: true }),
+    )
+    expect(mockClaimTipForSend).not.toHaveBeenCalled()
+  })
+})
+
+describe("/tipbatch callback — confirm/cancel", () => {
+  let handler: Handler
+
+  function makeBatchCallbackCtx(action: "confirm" | "cancel"): Ctx {
+    return {
+      from: { id: 12345, username: "testuser", first_name: "Test" },
+      match: [`tipbatch:${action}:${batchRow.id}`, "tipbatch", action, batchRow.id],
+      reply: vi.fn().mockResolvedValue(undefined),
+      answerCallbackQuery: vi.fn().mockResolvedValue(undefined),
+      editMessageText: vi.fn().mockResolvedValue(undefined),
+      api: { sendMessage: vi.fn().mockResolvedValue(undefined) },
+    }
+  }
+
+  beforeEach(() => {
+    getBot()
+    handler = getRegisteredCallbackHandlers()[0].handler
+
+    mockGetTipBatchById.mockResolvedValue(batchRow)
+    mockGetTipsByBatchId
+      .mockResolvedValueOnce([{ ...tipRow, batch_id: batchRow.id }, tipRowTwo])
+      .mockResolvedValue([{ ...tipRow, batch_id: batchRow.id, status: "sent" }, { ...tipRowTwo, status: "sent" }])
+    mockGetUserById.mockImplementation(async (id: string) => {
+      if (id === "user-1") return mockUser
+      if (id === "user-2") return recipientUser
+      if (id === "user-3") return recipientTwoUser
+      return null
+    })
+    mockClaimTipBatchForSend.mockResolvedValue({ ...batchRow, status: "sending" })
+    mockClaimTipForSend
+      .mockResolvedValueOnce({ ...tipRow, batch_id: batchRow.id, status: "sending" })
+      .mockResolvedValueOnce({ ...tipRowTwo, status: "sending" })
+    mockGetManagedWallet.mockResolvedValue(managedWallet)
+    mockExecuteTipSwap.mockResolvedValue({
+      sent: true,
+      seqno: 44,
+      offerAmount: "2.5000",
+      offerRaw: "2500000000",
+      expectedOut: "5.0000",
+      expectedRaw: "5000000",
+      askRaw: "5000000",
+      minAskAmount: "4950000",
+      slippageBps: 100,
+      txHash: "tip-tx",
+      network: "mainnet",
+    })
+  })
+
+  it("cancels every quoted tip in a batch", async () => {
+    const ctx = makeBatchCallbackCtx("cancel")
+    await handler(ctx)
+
+    expect(mockUpdateTipStatus).toHaveBeenCalledWith(tipRow.id, { status: "cancelled" })
+    expect(mockUpdateTipStatus).toHaveBeenCalledWith(tipRowTwo.id, { status: "cancelled" })
+    expect(mockUpdateTipBatchStatus).toHaveBeenCalledWith(batchRow.id, { status: "cancelled" })
+    expect(mockExecuteTipSwap).not.toHaveBeenCalled()
+  })
+
+  it("executes each tip in a confirmed batch", async () => {
+    const ctx = makeBatchCallbackCtx("confirm")
+    await handler(ctx)
+
+    expect(mockClaimTipBatchForSend).toHaveBeenCalledWith(batchRow.id)
+    expect(mockClaimTipForSend).toHaveBeenCalledWith(tipRow.id)
+    expect(mockClaimTipForSend).toHaveBeenCalledWith(tipRowTwo.id)
+    expect(mockExecuteTipSwap).toHaveBeenCalledTimes(2)
+    expect(mockUpdateTipBatchStatus).toHaveBeenCalledWith(batchRow.id, {
+      status: "sent",
+      error: null,
+    })
+    expect(ctx.editMessageText).toHaveBeenLastCalledWith(
+      expect.stringContaining("Tips sent"),
+      expect.objectContaining({ parse_mode: "HTML" }),
+    )
+  })
+})
+
+describe("tip settings and history commands", () => {
+  beforeEach(() => {
+    getBot()
+    mockGetOrCreateUser.mockResolvedValue({
+      user: mockUser,
+      wallet: managedWallet,
+      created: false,
+    })
+  })
+
+  it("/receive updates the default receive token", async () => {
+    const handler = getRegisteredHandlers().get("receive")!
+    const ctx = makeCtx({ command: "receive", argsText: "STON" })
+
+    await handler(ctx)
+
+    expect(mockUpdateUserPreferences).toHaveBeenCalledWith("user-1", {
+      defaultRecvToken: "STON",
+    })
+    expect(ctx.reply).toHaveBeenCalledWith("Default receive token set to STON.")
+  })
+
+  it("/settip updates reaction tip defaults", async () => {
+    const handler = getRegisteredHandlers().get("settip")!
+    const ctx = makeCtx({ command: "settip", argsText: "1 USDT from TON" })
+
+    await handler(ctx)
+
+    expect(mockUpdateUserPreferences).toHaveBeenCalledWith("user-1", {
+      reactionTipAmount: "1",
+      reactionRecvToken: "USDT",
+      reactionPayToken: "TON",
+    })
+    expect(ctx.reply).toHaveBeenCalledWith(
+      "Reaction tip default set to 1 USDT from TON.",
+    )
+  })
+
+  it("/settings shows wallet and tip preferences", async () => {
+    const handler = getRegisteredHandlers().get("settings")!
+    const ctx = makeCtx({ command: "settings" })
+
+    await handler(ctx)
+
+    const text = ctx.reply.mock.calls[0][0] as string
+    expect(text).toContain("TipSwap Settings")
+    expect(text).toContain("Receive token: <b>USDT</b>")
+    expect(text).toContain("Reaction tip: <b>1 USDT</b> from <b>TON</b>")
+  })
+
+  it("/history lists recent swaps and tips", async () => {
+    const handler = getRegisteredHandlers().get("history")!
+    mockGetRecentTipsForUser.mockResolvedValue([{ ...tipRow, status: "sent", tx_hash: "abcdef123456" }])
+    mockGetRecentSwapsForUser.mockResolvedValue([
+      {
+        id: "swap-1",
+        user_id: "user-1",
+        offer_token: "TON",
+        ask_token: "USDT",
+        offer_amount: "0.5",
+        expected_out: "1.0",
+        slippage_bps: 100,
+        tx_hash: "123456abcdef",
+        status: "sent",
+        error: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+    ])
+    const ctx = makeCtx({ command: "history" })
+
+    await handler(ctx)
+
+    const text = ctx.reply.mock.calls[0][0] as string
+    expect(text).toContain("Recent Activity")
+    expect(text).toContain("sent: 5 USDT sent")
+    expect(text).toContain("0.5 TON")
+  })
+})
+
+describe("group message tracking and reaction tips", () => {
+  beforeEach(() => {
+    getBot()
+    mockGetUserByTgId.mockResolvedValue(mockUser)
+    mockGetOrCreateUser.mockResolvedValue({
+      user: mockUser,
+      wallet: managedWallet,
+      created: false,
+    })
+    mockGetGroupMessageAuthor.mockResolvedValue({
+      id: "group-message-1",
+      chat_id: -100,
+      message_id: 10,
+      author_user_id: "user-2",
+      author_tg_id: 67890,
+      author_username: "alice",
+      created_at: new Date().toISOString(),
+    })
+    mockGetUserById.mockResolvedValue(recipientUser)
+    mockGetActiveWallet.mockImplementation(async (userId: string) => {
+      if (userId === "user-1") return managedWallet
+      if (userId === "user-2") return recipientWallet
+      throw new Error("missing wallet")
+    })
+    mockQuoteTipSwap.mockResolvedValue({
+      offerSymbol: "TON",
+      askSymbol: "USDT",
+      askAmount: "1",
+      askRaw: "1000000",
+      quotedOfferAmount: "0.5000",
+      offerRaw: "500000000",
+      expectedOut: "1.0000",
+      expectedRaw: "1000000",
+      minAskAmount: "990000",
+      slippageBps: 100,
+      routerVersion: "v2.2",
+      network: "mainnet",
+    })
+    mockCreateTipQuote.mockResolvedValue({
+      ...tipRow,
+      source: "reaction",
+      ask_amount: "1",
+      ask_raw: "1000000",
+      quoted_offer_amount: "0.5000",
+      offer_raw: "500000000",
+      expected_out: "1.0000",
+      min_ask_amount: "990000",
+      source_chat_id: -100,
+      source_message_id: 10,
+    })
+  })
+
+  it("records group messages only for registered users", async () => {
+    const handler = getRegisteredOnHandlers().get("message")!
+    const next = vi.fn().mockResolvedValue(undefined)
+
+    await handler(
+      {
+        from: { id: 12345, username: "testuser", first_name: "Test", is_bot: false },
+        message: {
+          message_id: 10,
+          chat: { id: -100, type: "group" },
+        },
+      },
+      next,
+    )
+
+    expect(mockGetUserByTgId).toHaveBeenCalledWith(12345)
+    expect(mockRecordGroupMessage).toHaveBeenCalledWith({
+      chatId: -100,
+      messageId: 10,
+      authorUserId: "user-1",
+      authorTgId: 12345,
+      authorUsername: "testuser",
+    })
+    expect(next).toHaveBeenCalled()
+  })
+
+  it("quotes a reaction tip and DMs the sender for confirmation", async () => {
+    const handler = getRegisteredReactionHandlers()[0].handler
+    const ctx = {
+      from: { id: 12345, username: "testuser", first_name: "Test" },
+      messageReaction: {
+        chat: { id: -100 },
+        message_id: 10,
+      },
+      api: { sendMessage: vi.fn().mockResolvedValue(undefined) },
+      reply: vi.fn().mockResolvedValue(undefined),
+      match: "",
+    } as unknown as Ctx & { messageReaction: unknown }
+
+    await handler(ctx)
+
+    expect(mockGetUserByTgId).toHaveBeenCalledWith(12345)
+    expect(mockQuoteTipSwap).toHaveBeenCalledWith({
+      offer: "TON",
+      ask: "USDT",
+      askAmount: "1",
+      slippageBps: 100,
+    })
+    expect(mockCreateTipQuote).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: "reaction",
+        sourceChatId: -100,
+        sourceMessageId: 10,
+        recipientUserId: "user-2",
+      }),
+    )
+    expect(ctx.api?.sendMessage).toHaveBeenCalledWith(
+      12345,
+      expect.stringContaining("Source: reaction tip"),
+      expect.objectContaining({
+        reply_markup: expect.objectContaining({
+          buttons: expect.arrayContaining([
+            { text: "Confirm", data: `tip:confirm:${tipRow.id}` },
+          ]),
+        }),
+      }),
     )
   })
 })
@@ -416,6 +1258,8 @@ describe("/help — message format", () => {
     expect(text).toContain("/start")
     expect(text).toContain("/wallet")
     expect(text).toContain("/balance")
+    expect(text).toContain("/connect")
+    expect(text).toContain("/managed")
     expect(text).toContain("/swap")
     expect(text).toContain("TON, USDT, STON")
     expect(text).toContain("TON Mainnet")
@@ -431,13 +1275,13 @@ describe("/wallet — message format", () => {
     getBot()
     handler = getRegisteredHandlers().get("wallet")!
 
-    ;(getOrCreateUser as ReturnType<typeof vi.fn>).mockResolvedValue({
-      user: { id: "user-1", tg_id: 12345, tg_username: "testuser", first_name: "Test", default_recv_token: "USDT" },
-      wallet: { id: "wallet-1", user_id: "user-1", address: "EQDabc123", public_key: "0x...", encrypted_mnemonic: "..." },
+    mockGetOrCreateUser.mockResolvedValue({
+      user: mockUser,
+      wallet: managedWallet,
       created: false,
     })
 
-    getBalance.mockResolvedValue(2_500_000_000n) // 2.5 TON
+    mockGetBalance.mockResolvedValue(2_500_000_000n) // 2.5 TON
   })
 
   it("replies with wallet address, balance, and network", async () => {
@@ -446,6 +1290,7 @@ describe("/wallet — message format", () => {
 
     const text = ctx.reply.mock.calls[0][0] as string
     expect(text).toContain("💼 Your TipSwap Wallet")
+    expect(text).toContain("managed")
     expect(text).toContain("EQDabc123")
     expect(text).toContain("2.5")
     expect(text).toContain("TON")
@@ -454,7 +1299,7 @@ describe("/wallet — message format", () => {
   })
 
   it("replies with error when user lookup fails", async () => {
-    ;(getOrCreateUser as ReturnType<typeof vi.fn>).mockRejectedValue(
+    mockGetOrCreateUser.mockRejectedValue(
       new Error("Supabase connection failed"),
     )
 
@@ -463,6 +1308,66 @@ describe("/wallet — message format", () => {
 
     expect(ctx.reply).toHaveBeenCalledWith(
       expect.stringContaining("Wallet lookup failed"),
+    )
+  })
+})
+
+// ─── /connect and /managed ────────────────────────────────────────
+
+describe("wallet mode commands", () => {
+  beforeEach(() => {
+    getBot()
+    mockGetOrCreateUser.mockResolvedValue({
+      user: mockUser,
+      wallet: managedWallet,
+      created: false,
+    })
+    mockConnectExternalWallet.mockResolvedValue(externalWallet)
+    mockSetActiveWallet.mockResolvedValue(managedWallet)
+    mockGetBalance.mockResolvedValue(2_500_000_000n)
+  })
+
+  it("/connect stores an external wallet and marks it active", async () => {
+    const handler = getRegisteredHandlers().get("connect")!
+    const ctx = makeCtx({
+      command: "connect",
+      argsText: "UQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJKZ",
+    })
+
+    await handler(ctx)
+
+    expect(mockConnectExternalWallet).toHaveBeenCalledWith(
+      "user-1",
+      "UQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJKZ",
+    )
+    expect(ctx.reply).toHaveBeenCalledWith(
+      expect.stringContaining("External wallet connected"),
+      expect.objectContaining({ parse_mode: "HTML" }),
+    )
+  })
+
+  it("/connect rejects invalid wallet addresses", async () => {
+    const handler = getRegisteredHandlers().get("connect")!
+    const ctx = makeCtx({ command: "connect", argsText: "not-a-wallet" })
+
+    await handler(ctx)
+
+    expect(ctx.reply).toHaveBeenCalledWith(
+      expect.stringContaining("valid TON wallet address"),
+    )
+    expect(mockConnectExternalWallet).not.toHaveBeenCalled()
+  })
+
+  it("/managed switches the active wallet back to managed", async () => {
+    const handler = getRegisteredHandlers().get("managed")!
+    const ctx = makeCtx({ command: "managed" })
+
+    await handler(ctx)
+
+    expect(mockSetActiveWallet).toHaveBeenCalledWith("user-1", "managed")
+    expect(ctx.reply).toHaveBeenCalledWith(
+      expect.stringContaining("Managed wallet active"),
+      expect.objectContaining({ parse_mode: "HTML" }),
     )
   })
 })
@@ -476,14 +1381,14 @@ describe("/balance — message format", () => {
     getBot()
     handler = getRegisteredHandlers().get("balance")!
 
-    ;(getOrCreateUser as ReturnType<typeof vi.fn>).mockResolvedValue({
-      user: { id: "user-1", tg_id: 12345, tg_username: "testuser", first_name: "Test", default_recv_token: "USDT" },
-      wallet: { id: "wallet-1", user_id: "user-1", address: "EQDabc123", public_key: "0x...", encrypted_mnemonic: "..." },
+    mockGetOrCreateUser.mockResolvedValue({
+      user: mockUser,
+      wallet: managedWallet,
       created: false,
     })
 
-    getBalance.mockResolvedValue(5_000_000_000n) // 5 TON
-    getJettonBalance.mockImplementation((_addr: string, minter: string) => {
+    mockGetBalance.mockResolvedValue(5_000_000_000n) // 5 TON
+    mockGetJettonBalance.mockImplementation(async (_addr: string, minter: string) => {
       if (minter.includes("EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs")) {
         return 10_500_000n // 10.5 USDT (6 decimals)
       }
@@ -519,9 +1424,9 @@ describe("/start — message format", () => {
   })
 
   it("replies with welcome message for new users", async () => {
-    ;(getOrCreateUser as ReturnType<typeof vi.fn>).mockResolvedValue({
-      user: { id: "user-1", tg_id: 12345, tg_username: "testuser", first_name: "Test", default_recv_token: "USDT" },
-      wallet: { id: "wallet-1", user_id: "user-1", address: "EQDabc123", public_key: "0x...", encrypted_mnemonic: "..." },
+    mockGetOrCreateUser.mockResolvedValue({
+      user: mockUser,
+      wallet: managedWallet,
       created: true,
     })
 
@@ -537,9 +1442,9 @@ describe("/start — message format", () => {
   })
 
   it("replies with welcome back message for returning users", async () => {
-    ;(getOrCreateUser as ReturnType<typeof vi.fn>).mockResolvedValue({
-      user: { id: "user-1", tg_id: 12345, tg_username: "testuser", first_name: "Test", default_recv_token: "USDT" },
-      wallet: { id: "wallet-1", user_id: "user-1", address: "EQDabc123", public_key: "0x...", encrypted_mnemonic: "..." },
+    mockGetOrCreateUser.mockResolvedValue({
+      user: mockUser,
+      wallet: managedWallet,
       created: false,
     })
 
@@ -549,7 +1454,7 @@ describe("/start — message format", () => {
     const text = ctx.reply.mock.calls[0][0] as string
     expect(text).toContain("👋 Welcome back")
     expect(text).toContain("EQDabc123")
-    expect(text).toContain("/balance, /wallet, /swap, or /help")
+    expect(text).toContain("/balance, /wallet, /connect, /managed, /swap, /tip, /settings, or /help")
   })
 
   it("does not reply when ctx.from is missing", async () => {

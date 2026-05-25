@@ -1,36 +1,42 @@
 /**
- * @file STON.fi DEX integration — swap construction, gas estimation, and on-chain quoting.
+ * @file STON.fi DEX integration — swap construction, gas estimation, and routing.
  *
  * Flow:
  *   1. Resolve token addresses (mainnet minter addresses)
  *   2. Preflight: check the wallet has enough TON for swap amount + gas + buffer
- *   3. Build the swap transaction via CPIRouterV2_2 (handles TON↔Jetton, Jetton→TON, Jetton→Jetton)
- *   4. Query the pool on-chain for a real-time expected output quote
+ *   3. Ask STON.fi's API to simulate the route, router, gas, and expected output
+ *   4. Build the swap transaction with the SDK router selected by that simulation
  *   5. Broadcast and confirm (seqno polling)
  *
- * The CPIRouterV2_2 works with pTON v2.1 for native TON wrapping/unwrapping.
- * All swap paths use a single pool hop through the CPI router.
+ * STON.fi may route different pairs through different router versions. The API
+ * simulation is the source of truth for router/pTON selection and min ask amount.
  */
 import "server-only"
-import { Address, toNano } from "@ton/core"
-import { TonClient } from "@ton/ton"
-import { pTON } from "@ston-fi/sdk"
-import { CPIRouterV2_2 } from "@ston-fi/sdk/dex/v2_2"
-import { getBalance, getTonClient, getNetwork, sendInternalMessage } from "@/lib/wallet/ton"
+import { Address, toNano, type Cell } from "@ton/core"
+import type { SenderArguments } from "@ton/ton"
+import { StonApiClient, type SwapSimulation } from "@ston-fi/api"
+import { dexFactory, routerFactory } from "@ston-fi/sdk"
+import {
+  getBalance,
+  getJettonBalance,
+  getNetwork,
+  getTonClient,
+  sendInternalMessage,
+  sendTonTransfer,
+} from "@/lib/wallet/ton"
 
-
-/**
- * STON.fi DEX v2.2 contract addresses.
- *
- * Mainnet addresses are official (https://docs.ston.fi).
- * STON.fi pools used by this bot are mainnet-only.
- */
-const ADDRESSES = {
-  mainnet: {
-    router: "EQD11suHkrO_1Mb5IIdYFx5ZPy38MuHoeHx6dA-QRaD8w0UJ",
-    pton: "EQBnGWMCf3-FZZq1W4IWcWiGAc3PHuZ0_H-7sad2oY00o83S",
-  },
-} as const
+const TON_ASSET_ADDRESS = "EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c"
+type SwapRouter = {
+  getSwapTonToJettonTxParams(
+    params: Record<string, unknown>,
+  ): Promise<SenderArguments & { to: Address; value: bigint; body?: Cell | null }>
+  getSwapJettonToTonTxParams(
+    params: Record<string, unknown>,
+  ): Promise<SenderArguments & { to: Address; value: bigint; body?: Cell | null }>
+  getSwapJettonToJettonTxParams(
+    params: Record<string, unknown>,
+  ): Promise<SenderArguments & { to: Address; value: bigint; body?: Cell | null }>
+}
 
 export class SwapUserError extends Error {
   constructor(message: string) {
@@ -41,7 +47,7 @@ export class SwapUserError extends Error {
 
 /** Common jetton minter addresses keyed by symbol. */
 export const TOKENS: Record<string, { mainnet: string; decimals: number }> = {
-  TON: { mainnet: "TON", decimals: 9 }, // sentinel — handled specially
+  TON: { mainnet: TON_ASSET_ADDRESS, decimals: 9 },
   USDT: {
     mainnet: "EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs",
     decimals: 6,
@@ -76,8 +82,28 @@ export type SwapParams = {
   offerAmount: string
   /** Slippage in basis points. 100 = 1% */
   slippageBps?: number
-  /** Optional minimum ask amount (raw units). If omitted we set 1n (no slippage protection). */
+  /** Optional minimum ask amount (raw units). If omitted, it is computed from the quote and slippageBps. */
   minAskAmount?: bigint
+}
+
+export type TipQuoteParams = {
+  /** Symbol of token the sender pays with */
+  offer: string
+  /** Symbol of token the recipient receives */
+  ask: string
+  /** Human-readable amount the recipient should receive */
+  askAmount: string
+  /** Slippage in basis points. 100 = 1% */
+  slippageBps?: number
+}
+
+export type TipSwapParams = TipQuoteParams & {
+  /** Sender's wallet mnemonic (decrypted, in memory only) */
+  mnemonic: string
+  /** Sender's TON wallet address */
+  senderAddress: string
+  /** Recipient's active TON wallet address */
+  recipientAddress: string
 }
 
 export function toRawAmount(amount: string, decimals: number) {
@@ -108,25 +134,227 @@ export function formatTon(amountNano: bigint) {
   return `${sign}${whole.toString()}.${frac}`
 }
 
+export function applySlippage(rawAmount: bigint, slippageBps: number) {
+  if (!Number.isInteger(slippageBps) || slippageBps < 0 || slippageBps > 5000) {
+    throw new SwapUserError("Slippage must be between 0 and 5000 basis points.")
+  }
+  return (rawAmount * BigInt(10_000 - slippageBps)) / 10_000n
+}
+
+export function slippageBpsToTolerance(slippageBps: number) {
+  if (!Number.isInteger(slippageBps) || slippageBps < 0 || slippageBps > 5000) {
+    throw new SwapUserError("Slippage must be between 0 and 5000 basis points.")
+  }
+  return (slippageBps / 10_000).toString()
+}
+
+function tokenAddress(symbol: string) {
+  return TOKENS[symbol].mainnet
+}
+
+function createSwapRouter(
+  client: ReturnType<typeof getTonClient>,
+  simulation: SwapSimulation,
+) {
+  const router = client.open(routerFactory(simulation.router)) as unknown as SwapRouter
+  const { pTON: Pton } = dexFactory(simulation.router)
+  const proxyTon = Pton.create(simulation.router.ptonMasterAddress)
+  return { router, proxyTon }
+}
+
+async function buildSwapTxParams(params: {
+  router: SwapRouter
+  proxyTon: ReturnType<ReturnType<typeof dexFactory>["pTON"]["create"]>
+  simulation: SwapSimulation
+  userAddress: string
+  receiverAddress?: string
+  offerSymbol: string
+  askSymbol: string
+  offerAddress: string
+  askAddress: string
+  offerAmount: bigint
+  minAskAmount: bigint
+}): Promise<SenderArguments & { to: Address; value: bigint; body?: Cell | null }> {
+  const {
+    router,
+    proxyTon,
+    simulation,
+    userAddress,
+    receiverAddress,
+    offerSymbol,
+    askSymbol,
+    offerAddress,
+    askAddress,
+    offerAmount,
+    minAskAmount,
+  } = params
+
+  if (offerSymbol === "TON" && askSymbol !== "TON") {
+    return await router.getSwapTonToJettonTxParams({
+      userWalletAddress: userAddress,
+      proxyTon,
+      askJettonAddress: askAddress,
+      askJettonWalletAddress: simulation.askJettonWallet,
+      offerJettonWalletAddress: simulation.offerJettonWallet,
+      offerAmount,
+      minAskAmount,
+      forwardGasAmount: simulation.gasParams.forwardGas,
+      ...(receiverAddress ? { receiverAddress } : {}),
+    })
+  }
+  if (offerSymbol !== "TON" && askSymbol === "TON") {
+    return await router.getSwapJettonToTonTxParams({
+      userWalletAddress: userAddress,
+      proxyTon,
+      offerJettonAddress: offerAddress,
+      offerJettonWalletAddress: simulation.offerJettonWallet,
+      askJettonWalletAddress: simulation.askJettonWallet,
+      offerAmount,
+      minAskAmount,
+      gasAmount: simulation.gasParams.gasBudget,
+      forwardGasAmount: simulation.gasParams.forwardGas,
+      ...(receiverAddress ? { receiverAddress } : {}),
+    })
+  }
+  return await router.getSwapJettonToJettonTxParams({
+    userWalletAddress: userAddress,
+    offerJettonAddress: offerAddress,
+    askJettonAddress: askAddress,
+    offerJettonWalletAddress: simulation.offerJettonWallet,
+    askJettonWalletAddress: simulation.askJettonWallet,
+    offerAmount,
+    minAskAmount,
+    gasAmount: simulation.gasParams.gasBudget,
+    forwardGasAmount: simulation.gasParams.forwardGas,
+    ...(receiverAddress ? { receiverAddress } : {}),
+  })
+}
+
+function parsePositiveAmount(amount: string, decimals: number, label: string) {
+  if (!/^\d+(\.\d+)?$/.test(amount)) {
+    throw new SwapUserError(`${label} amount must be a number.`)
+  }
+  const raw = toRawAmount(amount, decimals)
+  if (raw <= 0n) {
+    throw new SwapUserError(`${label} amount must be greater than zero.`)
+  }
+  return raw
+}
+
+function maxBigint(values: bigint[]) {
+  return values.reduce((max, value) => (value > max ? value : max), 0n)
+}
+
+function requiredTonForSimulation(
+  simulation: SwapSimulation,
+  offerSymbol: string,
+  askSymbol: string,
+  offerRaw: bigint,
+) {
+  const fallback = requiredTonForSwap(offerSymbol, askSymbol, offerRaw)
+  const gasValues = [
+    fallback.gas,
+    simulation.gasParams.gasBudget ? BigInt(simulation.gasParams.gasBudget) : 0n,
+    simulation.gasParams.forwardGas ? BigInt(simulation.gasParams.forwardGas) : 0n,
+  ]
+  const gas = maxBigint(gasValues)
+  const buffer = toNano("0.05")
+  const offerPart = offerSymbol === "TON" ? offerRaw : 0n
+  return { offerPart, gas, buffer, total: offerPart + gas + buffer }
+}
+
+function ensureV2DirectSwap(simulation: SwapSimulation) {
+  if (simulation.router.majorVersion !== 2) {
+    throw new SwapUserError(
+      "Direct tipping is unavailable for this route right now. Try a different token pair.",
+    )
+  }
+}
+
+function tipQuoteFromSimulation(
+  simulation: SwapSimulation,
+  offerDecimals: number,
+  askDecimals: number,
+) {
+  const offerRaw = BigInt(simulation.offerUnits)
+  const askRaw = BigInt(simulation.askUnits)
+  const minAskRaw = BigInt(
+    simulation.recommendedMinAskUnits || simulation.minAskUnits,
+  )
+
+  if (offerRaw <= 0n || askRaw <= 0n || minAskRaw <= 0n) {
+    throw new Error("STON.fi quote returned zero output")
+  }
+
+  return {
+    offerAmount: formatTokenAmount(offerRaw, offerDecimals),
+    offerRaw: offerRaw.toString(),
+    expectedOut: formatTokenAmount(askRaw, askDecimals),
+    expectedRaw: askRaw.toString(),
+    askRaw: askRaw.toString(),
+    minAskAmount: minAskRaw.toString(),
+    routerVersion: `v${simulation.router.majorVersion}.${simulation.router.minorVersion}`,
+  }
+}
+
+async function simulateDirectTip(params: TipQuoteParams) {
+  const stonApi = new StonApiClient()
+  const offer = resolveToken(params.offer)
+  const ask = resolveToken(params.ask)
+  const slippageBps = params.slippageBps ?? 100
+
+  if (offer.symbol === ask.symbol) {
+    throw new SwapUserError("Cannot tip by swapping a token to itself.")
+  }
+
+  const askRaw = parsePositiveAmount(params.askAmount, ask.decimals, "Tip")
+
+  let simulation: SwapSimulation
+  try {
+    simulation = await stonApi.simulateReverseSwap({
+      offerAddress: tokenAddress(offer.symbol),
+      askAddress: tokenAddress(ask.symbol),
+      askUnits: askRaw.toString(),
+      slippageTolerance: slippageBpsToTolerance(slippageBps),
+      dexV2: true,
+      dexVersion: [2],
+    })
+    ensureV2DirectSwap(simulation)
+  } catch (err) {
+    if (err instanceof SwapUserError) throw err
+    console.warn("[tipswap] reverse quote lookup failed:", (err as Error).message)
+    throw new SwapUserError(
+      "Could not get a live STON.fi quote for this tip route. Try again shortly or use a more liquid pair.",
+    )
+  }
+
+  const quote = tipQuoteFromSimulation(
+    simulation,
+    offer.decimals,
+    ask.decimals,
+  )
+
+  return { offer, ask, slippageBps, simulation, quote }
+}
+
 /**
  * Build and broadcast a STON.fi swap from the provided wallet.
  * Returns the seqno-confirmation result from sendInternalMessage.
  */
 export async function executeSwap(params: SwapParams) {
   const network = getNetwork()
-  const addrs = ADDRESSES[network]
   const client = getTonClient(network)
-
-  const router = client.open(
-    CPIRouterV2_2.create(Address.parse(addrs.router)),
-  )
-  const proxyTon = pTON.v2_1.create(Address.parse(addrs.pton))
+  const stonApi = new StonApiClient()
 
   const offer = resolveToken(params.offer)
   const ask = resolveToken(params.ask)
+  const slippageBps = params.slippageBps ?? 100
 
-  const offerRaw = toRawAmount(params.offerAmount, offer.decimals)
-  const minAskAmount = params.minAskAmount ?? 1n // permissive default for M1; production should compute via quote
+  if (offer.symbol === ask.symbol) {
+    throw new SwapUserError("Cannot swap a token to itself.")
+  }
+
+  const offerRaw = parsePositiveAmount(params.offerAmount, offer.decimals, "Swap")
 
   // Preflight: for any swap we need TON for gas; for TON offers we need offer+gas.
   const tonBalance = await getBalance(params.userAddress)
@@ -145,71 +373,73 @@ export async function executeSwap(params: SwapParams) {
     throw new SwapUserError(lines.join("\n"))
   }
 
-  let txParams: { to: Address; value: bigint; body?: import("@ton/core").Cell | null }
-
-  try {
-    if (offer.symbol === "TON" && ask.symbol !== "TON") {
-      txParams = await router.getSwapTonToJettonTxParams({
-        userWalletAddress: params.userAddress,
-        proxyTon,
-        askJettonAddress: ask.mainnet,
-        offerAmount: offerRaw,
-        minAskAmount,
-      })
-    } else if (offer.symbol !== "TON" && ask.symbol === "TON") {
-      txParams = await router.getSwapJettonToTonTxParams({
-        userWalletAddress: params.userAddress,
-        proxyTon,
-        offerJettonAddress: offer.mainnet,
-        offerAmount: offerRaw,
-        minAskAmount,
-      })
-    } else if (offer.symbol !== "TON" && ask.symbol !== "TON") {
-      txParams = await router.getSwapJettonToJettonTxParams({
-        userWalletAddress: params.userAddress,
-        offerJettonAddress: offer.mainnet,
-        askJettonAddress: ask.mainnet,
-        offerAmount: offerRaw,
-        minAskAmount,
-      })
-    } else {
-      throw new Error("Cannot swap a token to itself")
-    }
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    if (
-      message.toLowerCase().includes("insufficient") ||
-      message.toLowerCase().includes("not enough") ||
-      message.toLowerCase().includes("low balance")
-    ) {
+  if (offer.symbol !== "TON") {
+    const offerBalance = await getJettonBalance(params.userAddress, offer.mainnet)
+    if (offerBalance < offerRaw) {
       throw new SwapUserError(
-        "Insufficient balance for this swap. Top up wallet and try a smaller amount.",
+        `Insufficient ${offer.symbol} balance. Need ${formatTokenAmount(offerRaw, offer.decimals)} ${offer.symbol}, wallet has ${formatTokenAmount(offerBalance, offer.decimals)} ${offer.symbol}.`,
       )
     }
-    if (message.includes("status code 500")) {
-      throw new SwapUserError(
-        "Swap route unavailable right now. Try TON/USDT or TON/STON, reduce amount, and retry in 20-30s.",
-      )
-    }
-    throw err
   }
 
-  // Get an on-chain quote (expected output) before sending
-  let expectedOut: string | null = null
+  let quote: SwapQuote
+  let simulation: SwapSimulation
   try {
-    expectedOut = await getExpectedOut({
-      client,
-      routerAddress: Address.parse(addrs.router),
-      offerSymbol: offer.symbol,
-      askSymbol: ask.symbol,
-      offerRaw,
-      askDecimals: ask.decimals,
-      ptonAddress: Address.parse(addrs.pton),
+    simulation = await stonApi.simulateSwap({
+      offerAddress: tokenAddress(offer.symbol),
+      askAddress: tokenAddress(ask.symbol),
+      offerUnits: offerRaw.toString(),
+      slippageTolerance: slippageBpsToTolerance(slippageBps),
     })
-  } catch (e) {
-    // Quote is best-effort — don't block the swap if it fails
-    console.warn("[tipswap] quote lookup failed:", (e as Error).message)
+    quote = getExpectedOutFromSimulation(simulation, ask.decimals)
+  } catch (err) {
+    console.warn("[tipswap] quote lookup failed:", (err as Error).message)
+    throw new SwapUserError(
+      "Could not get a live STON.fi quote for this route. Try again shortly or use a more liquid pair.",
+    )
   }
+
+  const minAskAmount =
+    params.minAskAmount ?? BigInt(simulation.recommendedMinAskUnits || simulation.minAskUnits)
+  if (minAskAmount <= 0n) {
+    throw new SwapUserError("Quoted output is too small after slippage. Increase the amount and try again.")
+  }
+
+  const { router, proxyTon } = createSwapRouter(client, simulation)
+  const txParams: SenderArguments & { to: Address; value: bigint; body?: Cell | null } =
+    await (async () => {
+      try {
+        return await buildSwapTxParams({
+          router,
+          proxyTon,
+          simulation,
+          userAddress: params.userAddress,
+          offerSymbol: offer.symbol,
+          askSymbol: ask.symbol,
+          offerAddress: offer.mainnet,
+          askAddress: ask.mainnet,
+          offerAmount: offerRaw,
+          minAskAmount,
+        })
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        if (
+          message.toLowerCase().includes("insufficient") ||
+          message.toLowerCase().includes("not enough") ||
+          message.toLowerCase().includes("low balance")
+        ) {
+          throw new SwapUserError(
+            "Insufficient balance for this swap. Top up wallet and try a smaller amount.",
+          )
+        }
+        if (message.includes("status code 500")) {
+          throw new SwapUserError(
+            "Swap route unavailable right now. Try TON/USDT or TON/STON, reduce amount, and retry in 20-30s.",
+          )
+        }
+        throw err
+      }
+    })()
 
   const result = await sendInternalMessage({
     mnemonic: params.mnemonic,
@@ -220,8 +450,184 @@ export async function executeSwap(params: SwapParams) {
 
   return {
     ...result,
-    expectedOut,
+    expectedOut: quote.expectedOut,
+    expectedRaw: quote.expectedRaw.toString(),
+    minAskAmount: minAskAmount.toString(),
     offerRaw: offerRaw.toString(),
+    network,
+  }
+}
+
+export async function quoteTipSwap(params: TipQuoteParams) {
+  const offerToken = resolveToken(params.offer)
+  const askToken = resolveToken(params.ask)
+  const slippageBps = params.slippageBps ?? 100
+  if (offerToken.symbol === askToken.symbol) {
+    if (offerToken.symbol !== "TON") {
+      throw new SwapUserError(
+        "Same-token jetton tips are not supported yet. Use TON or choose a different pay token.",
+      )
+    }
+    const raw = parsePositiveAmount(params.askAmount, askToken.decimals, "Tip")
+    const amount = formatTokenAmount(raw, askToken.decimals)
+    return {
+      offerSymbol: "TON",
+      askSymbol: "TON",
+      askAmount: params.askAmount,
+      askRaw: raw.toString(),
+      quotedOfferAmount: amount,
+      offerRaw: raw.toString(),
+      expectedOut: amount,
+      expectedRaw: raw.toString(),
+      minAskAmount: raw.toString(),
+      slippageBps,
+      routerVersion: "direct",
+      network: getNetwork(),
+    }
+  }
+
+  const simulated = await simulateDirectTip(params)
+  return {
+    offerSymbol: simulated.offer.symbol,
+    askSymbol: simulated.ask.symbol,
+    askAmount: params.askAmount,
+    askRaw: simulated.quote.askRaw,
+    quotedOfferAmount: simulated.quote.offerAmount,
+    offerRaw: simulated.quote.offerRaw,
+    expectedOut: simulated.quote.expectedOut,
+    expectedRaw: simulated.quote.expectedRaw,
+    minAskAmount: simulated.quote.minAskAmount,
+    slippageBps: simulated.slippageBps,
+    routerVersion: simulated.quote.routerVersion,
+    network: getNetwork(),
+  }
+}
+
+export async function executeTipSwap(params: TipSwapParams) {
+  try {
+    Address.parse(params.recipientAddress)
+  } catch {
+    throw new SwapUserError("Recipient wallet address is invalid.")
+  }
+
+  const offerToken = resolveToken(params.offer)
+  const askToken = resolveToken(params.ask)
+  if (offerToken.symbol === askToken.symbol) {
+    if (offerToken.symbol !== "TON") {
+      throw new SwapUserError(
+        "Same-token jetton tips are not supported yet. Use TON or choose a different pay token.",
+      )
+    }
+    const raw = parsePositiveAmount(params.askAmount, askToken.decimals, "Tip")
+    const amount = formatTokenAmount(raw, askToken.decimals)
+    const result = await sendTonTransfer({
+      mnemonic: params.mnemonic,
+      to: params.recipientAddress,
+      amount: raw,
+    })
+    return {
+      ...result,
+      offerAmount: amount,
+      offerRaw: raw.toString(),
+      expectedOut: amount,
+      expectedRaw: raw.toString(),
+      askRaw: raw.toString(),
+      minAskAmount: raw.toString(),
+      slippageBps: params.slippageBps ?? 100,
+      network: getNetwork(),
+    }
+  }
+
+  const network = getNetwork()
+  const client = getTonClient(network)
+  const { offer, ask, slippageBps, simulation, quote } =
+    await simulateDirectTip(params)
+  const offerRaw = BigInt(quote.offerRaw)
+  const minAskAmount = BigInt(quote.minAskAmount)
+
+  const tonBalance = await getBalance(params.senderAddress)
+  const cost = requiredTonForSimulation(
+    simulation,
+    offer.symbol,
+    ask.symbol,
+    offerRaw,
+  )
+  if (tonBalance < cost.total) {
+    const lines = [
+      `Insufficient TON balance. Need ${formatTon(cost.total)} TON, wallet has ${formatTon(tonBalance)} TON.`,
+      "",
+    ]
+    if (offer.symbol === "TON") {
+      lines.push(`Tip swap amount: ${formatTon(cost.offerPart)} TON`)
+    }
+    lines.push(`Gas (STON.fi): ${formatTon(cost.gas)} TON`)
+    lines.push(`Safety buffer: ${formatTon(cost.buffer)} TON`)
+
+    throw new SwapUserError(lines.join("\n"))
+  }
+
+  if (offer.symbol !== "TON") {
+    const offerBalance = await getJettonBalance(params.senderAddress, offer.mainnet)
+    if (offerBalance < offerRaw) {
+      throw new SwapUserError(
+        `Insufficient ${offer.symbol} balance. Need ${formatTokenAmount(offerRaw, offer.decimals)} ${offer.symbol}, wallet has ${formatTokenAmount(offerBalance, offer.decimals)} ${offer.symbol}.`,
+      )
+    }
+  }
+
+  const { router, proxyTon } = createSwapRouter(client, simulation)
+  const txParams: SenderArguments & { to: Address; value: bigint; body?: Cell | null } =
+    await (async () => {
+      try {
+        return await buildSwapTxParams({
+          router,
+          proxyTon,
+          simulation,
+          userAddress: params.senderAddress,
+          receiverAddress: params.recipientAddress,
+          offerSymbol: offer.symbol,
+          askSymbol: ask.symbol,
+          offerAddress: offer.mainnet,
+          askAddress: ask.mainnet,
+          offerAmount: offerRaw,
+          minAskAmount,
+        })
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        if (
+          message.toLowerCase().includes("insufficient") ||
+          message.toLowerCase().includes("not enough") ||
+          message.toLowerCase().includes("low balance")
+        ) {
+          throw new SwapUserError(
+            "Insufficient balance for this tip swap. Top up wallet and try a smaller amount.",
+          )
+        }
+        if (message.includes("status code 500")) {
+          throw new SwapUserError(
+            "Tip route unavailable right now. Try TON/USDT or TON/STON, reduce amount, and retry in 20-30s.",
+          )
+        }
+        throw err
+      }
+    })()
+
+  const result = await sendInternalMessage({
+    mnemonic: params.mnemonic,
+    to: txParams.to,
+    value: txParams.value,
+    body: txParams.body ?? undefined,
+  })
+
+  return {
+    ...result,
+    offerAmount: quote.offerAmount,
+    offerRaw: quote.offerRaw,
+    expectedOut: quote.expectedOut,
+    expectedRaw: quote.expectedRaw,
+    askRaw: quote.askRaw,
+    minAskAmount: quote.minAskAmount,
+    slippageBps,
     network,
   }
 }
@@ -247,54 +653,22 @@ export function formatTokenAmount(raw: bigint, decimals: number): string {
   return `${whole}.${frac}`
 }
 
-/**
- * Query the STON.fi pool to estimate how much the user will receive from a swap.
- * Uses the pool's on-chain reserves and fee structure.
- */
-export async function getExpectedOut(params: {
-  client: TonClient
-  routerAddress: Address
-  offerSymbol: string
-  askSymbol: string
-  offerRaw: bigint
-  askDecimals: number
-  ptonAddress: Address
-}): Promise<string> {
-  const { client, routerAddress, offerSymbol, askSymbol, offerRaw, askDecimals, ptonAddress } = params
+export type SwapQuote = {
+  expectedOut: string
+  expectedRaw: bigint
+}
 
-  const router = client.open(CPIRouterV2_2.create(routerAddress))
-
-  // Determine pool tokens (always offer first, ask second)
-  let token0: Address, token1: Address
-  if (offerSymbol === "TON" && askSymbol !== "TON") {
-    token0 = ptonAddress
-    token1 = Address.parse(TOKENS[askSymbol].mainnet)
-  } else if (offerSymbol !== "TON" && askSymbol === "TON") {
-    token0 = Address.parse(TOKENS[offerSymbol].mainnet)
-    token1 = ptonAddress
-  } else if (offerSymbol !== "TON" && askSymbol !== "TON") {
-    token0 = Address.parse(TOKENS[offerSymbol].mainnet)
-    token1 = Address.parse(TOKENS[askSymbol].mainnet)
-  } else {
-    throw new Error("Cannot swap TON to TON")
+export function getExpectedOutFromSimulation(
+  simulation: Pick<SwapSimulation, "askUnits">,
+  askDecimals: number,
+): SwapQuote {
+  const expectedRaw = BigInt(simulation.askUnits)
+  if (expectedRaw <= 0n) {
+    throw new Error("STON.fi quote returned zero output")
   }
 
-  const pool = await router.getPool({ token0, token1 })
-
-  const provider = client.provider(pool.address)
-  const data = await pool.getPoolData(provider)
-
-  // reserve0 belongs to token0 (offer), reserve1 belongs to token1 (ask)
-  const reserveIn = data.reserve0
-  const reserveOut = data.reserve1
-
-  // Total fee in basis points (STON.fi CPI pool: lpFee + protocolFee ≈ 30 bps)
-  const feeBps = Number(data.lpFee) + Number(data.protocolFee)
-
-  // Constant product formula with fee
-  const amountInWithFee = offerRaw * BigInt(10000 - feeBps) / 10000n
-  const newReserveIn = reserveIn + amountInWithFee
-  const expectedOut = reserveOut - (reserveIn * reserveOut) / newReserveIn
-
-  return formatTokenAmount(expectedOut, askDecimals)
+  return {
+    expectedOut: formatTokenAmount(expectedRaw, askDecimals),
+    expectedRaw,
+  }
 }

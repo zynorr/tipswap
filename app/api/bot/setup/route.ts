@@ -85,7 +85,7 @@ export async function POST(req: Request) {
       body: JSON.stringify({
         url,
         secret_token: secret,
-        allowed_updates: ["message", "callback_query"],
+        allowed_updates: ["message", "callback_query", "message_reaction"],
         drop_pending_updates: true,
       }),
     })
