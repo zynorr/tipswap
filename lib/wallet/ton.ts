@@ -206,9 +206,10 @@ export async function sendInternalMessage(params: {
 
     await withRateLimitRetry(() => client.sendMessage(externalMessage))
 
-    // Wait for seqno to advance — that confirms the wallet processed the tx
+    // Wait for seqno to advance. Keep this comfortably inside the Vercel Hobby
+    // Fluid Compute window because Telegram webhooks run in one invocation.
     let attempts = 0
-    while (attempts < 30) {
+    while (attempts < 24) {
       await new Promise((r) => setTimeout(r, 2000))
       const newSeqno = await withRateLimitRetry(() => contract.getSeqno())
       if (newSeqno > seqno) {

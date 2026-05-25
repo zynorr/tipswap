@@ -64,7 +64,7 @@ flowchart TB
 - **Best-effort quoting** — the on-chain price estimate is informative only; a quote failure never blocks a swap
 - **Exponential backoff** — TONCenter 429 responses trigger up to 5 retries with 2× delay starting at 600ms
 
-**Database:** Four tables (`tg_users`, `tg_wallets`, `tg_swaps`, `waitlist`) with RLS enabled. Only `waitlist` allows anonymous inserts — all bot data is service-role only. Wallet mnemonics are encrypted at rest with AES-256-GCM.
+**Database:** Bot data lives in `tg_users`, `tg_wallets`, `tg_swaps`, `tg_tips`, `tg_tip_batches`, and `tg_group_messages`; public waitlist signups live in `waitlist`. RLS is enabled. Only `waitlist` allows anonymous inserts — all bot data is service-role only. Wallet mnemonics are encrypted at rest with AES-256-GCM.
 
 ---
 
@@ -90,6 +90,12 @@ flowchart TB
 | `/wallet` | Show wallet address and TON balance |
 | `/balance` | Show TON, USDT, and STON balances |
 | `/swap <amount> <from> <to>` | Execute a cross-token swap |
+| `/tip <amount> <receive-token> @user` | Tip a registered Telegram user, paying from TON by default |
+| `/tip <amount> <receive-token> from <pay-token> @user` | Tip with an explicit pay token |
+| `/receive <token>` | Set your default receive token |
+| `/settip <amount> <receive-token> from <pay-token>` | Set reaction tip defaults |
+| `/settings` | Show wallet and tip preferences |
+| `/history` | Show recent swap/tip activity |
 | `/help` | Full command reference |
 
 **Supported tokens:** `TON`, `USDT`, `STON`
@@ -137,7 +143,7 @@ Open [http://localhost:3000](http://localhost:3000).
 To test the bot locally, you need a public HTTPS URL:
 
 ```bash
-ngrok http 3000
+cloudflared tunnel --url http://localhost:3000
 ```
 
 Then go to `/admin/setup`, paste your `ADMIN_SETUP_TOKEN`, and click **Set webhook**.
@@ -152,27 +158,33 @@ Then go to `/admin/setup`, paste your `ADMIN_SETUP_TOKEN`, and click **Set webho
 | `TELEGRAM_WEBHOOK_SECRET` | Secret token validated on webhook requests |
 | `ADMIN_SETUP_TOKEN` | Bearer token for webhook setup API (production) |
 | `WALLET_ENCRYPTION_KEY` | Symmetric key for mnemonic encryption (min 32 chars) |
-| `STON_NETWORK` | Must be `mainnet` |
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role key for bot/admin API routes |
+| `TON_API_KEY` | TONCenter API key for higher rate limits |
 
 The admin Supabase client also accepts `SUPABASE_SERVICE_ROLE_KEY` or `SUPABASE_SECRET_KEY`, and falls back `SUPABASE_URL` → `NEXT_PUBLIC_SUPABASE_URL`.
 
-**Optional:** `TON_API_KEY` — TONCenter API key for higher rate limits.
+Copy `.env.example` for a safe template. Use the Supabase project API URL for `NEXT_PUBLIC_SUPABASE_URL`, not the Postgres connection string.
 
 ---
 
 ## Deployment
 
-Deploy to Vercel with all environment variables configured. Make sure `STON_NETWORK=mainnet`.
+Deploy to Vercel with all environment variables configured. The bot runs on TON mainnet.
 
-After deployment, set the webhook:
+After deployment, set the webhook from `/admin/setup`, or with:
 
-```
-POST /api/bot
+```bash
+curl -X POST https://<your-vercel-domain>/api/bot/setup \
+  -H "authorization: Bearer $ADMIN_SETUP_TOKEN" \
+  -H "content-type: application/json" \
+  --data '{"action":"set","url":"https://<your-vercel-domain>"}'
 ```
 
 The setup/inspection API (`GET|POST /api/bot/setup`) requires `Authorization: Bearer <ADMIN_SETUP_TOKEN>` in production. Every webhook request validates `X-Telegram-Bot-Api-Secret-Token` — requests without it get a `403`.
+
+For the full Vercel Hobby checklist, see [`docs/production-vercel.md`](docs/production-vercel.md).
 
 ---
 
@@ -180,7 +192,7 @@ The setup/inspection API (`GET|POST /api/bot/setup`) requires `Authorization: Be
 
 - **Error handling:** Balance preflight prevents gas-out failures. TONCenter 429s trigger exponential backoff. RPC errors produce user-friendly messages.
 - **Hot wallet model:** Per-user managed wallets are convenient but carry risk. Production deployments should add per-user limits, wallet graduation, command rate limiting, and monitoring.
-- **Slippage:** Currently defaults to a permissive `minAskAmount` of 1 raw unit. Production deployments should compute the minimum output from a real-time pool quote before broadcasting.
+- **Vercel Hobby:** Keep Fluid Compute enabled. The webhook function is configured for a longer Hobby-safe execution window, and batch tips are limited to three recipients because each recipient gets a separate transaction.
 
 ---
 

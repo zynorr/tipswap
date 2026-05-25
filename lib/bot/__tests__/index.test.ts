@@ -857,6 +857,18 @@ describe("/tip — quote flow", () => {
     )
     expect(mockQuoteTipSwap).not.toHaveBeenCalled()
   })
+
+  it("rejects batches above the production recipient limit", async () => {
+    const ctx = makeCtx({
+      command: "tip",
+      argsText: "5 USDT @alice @bobuser @caroluser @daveuser",
+    })
+
+    await handler(ctx)
+
+    expect(ctx.reply).toHaveBeenCalledWith(expect.stringContaining("up to 3 recipients"))
+    expect(mockQuoteTipSwap).not.toHaveBeenCalled()
+  })
 })
 
 describe("/tip callback — confirm/cancel", () => {

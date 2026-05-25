@@ -49,6 +49,7 @@ import { executeSwap, executeTipSwap, quoteTipSwap, resolveToken, TOKENS } from 
 import { Address, fromNano } from "@ton/core"
 
 let _bot: Bot | null = null
+const MAX_BATCH_RECIPIENTS = 3
 
 function commandText(match: unknown) {
   if (typeof match === "string") return match.trim()
@@ -78,6 +79,7 @@ function tipUsage() {
     "Usage:",
     "/tip <amount> <receive-token> @recipient",
     "/tip <amount> <receive-token> from <pay-token> @recipient",
+    `up to ${MAX_BATCH_RECIPIENTS} recipients per tip command`,
     "examples:",
     "/tip 5 USDT @alice",
     "/tip 5 USDT from TON @alice",
@@ -96,6 +98,7 @@ function parseTipArgs(args: string[]) {
     recipients = args.slice(4)
   }
   if (!recipients.length) return null
+  if (recipients.length > MAX_BATCH_RECIPIENTS) return null
   const usernames = recipients.map((recipient) => {
     if (!recipient.startsWith("@")) return null
     const username = recipient.slice(1)

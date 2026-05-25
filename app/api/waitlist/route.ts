@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { adminClient } from "@/lib/supabase/admin"
 
 export const runtime = "nodejs"
+export const maxDuration = 10
 
 export async function POST(req: Request) {
   let body: { email?: string; telegram_handle?: string } = {}
