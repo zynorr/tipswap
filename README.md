@@ -64,7 +64,7 @@ flowchart TB
 - **Best-effort quoting** — the on-chain price estimate is informative only; a quote failure never blocks a swap
 - **Exponential backoff** — TONCenter 429 responses trigger up to 5 retries with 2× delay starting at 600ms
 
-**Database:** Bot data lives in `tg_users`, `tg_wallets`, `tg_swaps`, `tg_tips`, `tg_tip_batches`, and `tg_group_messages`; public waitlist signups live in `waitlist`. RLS is enabled. Only `waitlist` allows anonymous inserts — all bot data is service-role only. Wallet mnemonics are encrypted at rest with AES-256-GCM.
+**Database:** Bot data lives in `tg_users`, `tg_wallets`, `tg_swaps`, `tg_tips`, `tg_tip_batches`, `tg_tip_claims`, and `tg_group_messages`; public waitlist signups live in `waitlist`. RLS is enabled. Only `waitlist` allows anonymous inserts — all bot data is service-role only. Wallet mnemonics are encrypted at rest with AES-256-GCM.
 
 ---
 
@@ -90,7 +90,7 @@ flowchart TB
 | `/wallet` | Show wallet address and TON balance |
 | `/balance` | Show TON, USDT, and STON balances |
 | `/swap <amount> <from> <to>` | Execute a cross-token swap |
-| `/tip <amount> <receive-token> @user` | Tip a registered Telegram user, paying from TON by default |
+| `/tip <amount> <receive-token> @user` | Tip a Telegram user from TON by default, or create a claim link if they have not started the bot |
 | `/tip <amount> <receive-token> from <pay-token> @user` | Tip with an explicit pay token |
 | `/receive <token>` | Set your default receive token |
 | `/settip <amount> <receive-token> from <pay-token>` | Set reaction tip defaults |
@@ -162,10 +162,15 @@ Then go to `/admin/setup`, paste your `ADMIN_SETUP_TOKEN`, and click **Set webho
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role key for bot/admin API routes |
 | `TON_API_KEY` | TONCenter API key for higher rate limits |
+| `TONPAY_CHAIN` | `mainnet` for production, `testnet` only for testnet wallets |
+| `TONPAY_API_KEY` | Optional TON Pay Merchant API key for dashboard tracking |
+| `TONPAY_WEBHOOK_SECRET` | Optional TON Pay webhook secret for `/api/tonpay/webhook` |
 
 The admin Supabase client also accepts `SUPABASE_SERVICE_ROLE_KEY` or `SUPABASE_SECRET_KEY`, and falls back `SUPABASE_URL` → `NEXT_PUBLIC_SUPABASE_URL`.
 
 Copy `.env.example` for a safe template. Use the Supabase project API URL for `NEXT_PUBLIC_SUPABASE_URL`, not the Postgres connection string.
+
+Existing Supabase projects should run `scripts/002_external_tip_payments.sql` once to add Mini App external-wallet payment tracking. New projects can run `scripts/001_init_schema.sql`.
 
 ---
 

@@ -177,6 +177,91 @@ export type Database = {
           },
         ]
       }
+      tg_external_tip_payments: {
+        Row: {
+          id: string
+          tip_id: string
+          sender_user_id: string
+          recipient_user_id: string
+          sender_address: string
+          recipient_address: string
+          provider: string
+          asset: string
+          amount: string
+          reference: string | null
+          body_base64_hash: string | null
+          boc: string | null
+          tx_hash: string | null
+          trace_id: string | null
+          status: string
+          error: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          tip_id: string
+          sender_user_id: string
+          recipient_user_id: string
+          sender_address: string
+          recipient_address: string
+          provider: string
+          asset: string
+          amount: string
+          reference?: string | null
+          body_base64_hash?: string | null
+          boc?: string | null
+          tx_hash?: string | null
+          trace_id?: string | null
+          status?: string
+          error?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          tip_id?: string
+          sender_user_id?: string
+          recipient_user_id?: string
+          sender_address?: string
+          recipient_address?: string
+          provider?: string
+          asset?: string
+          amount?: string
+          reference?: string | null
+          body_base64_hash?: string | null
+          boc?: string | null
+          tx_hash?: string | null
+          trace_id?: string | null
+          status?: string
+          error?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tg_external_tip_payments_tip_id_fkey"
+            columns: ["tip_id"]
+            isOneToOne: false
+            referencedRelation: "tg_tips"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tg_external_tip_payments_sender_user_id_fkey"
+            columns: ["sender_user_id"]
+            isOneToOne: false
+            referencedRelation: "tg_users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tg_external_tip_payments_recipient_user_id_fkey"
+            columns: ["recipient_user_id"]
+            isOneToOne: false
+            referencedRelation: "tg_users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       tg_tips: {
         Row: {
           id: string
@@ -349,6 +434,69 @@ export type Database = {
             columns: ["sender_user_id"]
             isOneToOne: false
             referencedRelation: "tg_users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tg_tip_claims: {
+        Row: {
+          id: string
+          code: string
+          sender_user_id: string
+          target_username: string
+          offer_token: string
+          ask_token: string
+          ask_amount: string
+          status: string
+          tip_id: string | null
+          error: string | null
+          expires_at: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          code: string
+          sender_user_id: string
+          target_username: string
+          offer_token: string
+          ask_token: string
+          ask_amount: string
+          status?: string
+          tip_id?: string | null
+          error?: string | null
+          expires_at?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          code?: string
+          sender_user_id?: string
+          target_username?: string
+          offer_token?: string
+          ask_token?: string
+          ask_amount?: string
+          status?: string
+          tip_id?: string | null
+          error?: string | null
+          expires_at?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tg_tip_claims_sender_user_id_fkey"
+            columns: ["sender_user_id"]
+            isOneToOne: false
+            referencedRelation: "tg_users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tg_tip_claims_tip_id_fkey"
+            columns: ["tip_id"]
+            isOneToOne: false
+            referencedRelation: "tg_tips"
             referencedColumns: ["id"]
           },
         ]

@@ -110,6 +110,12 @@ importers:
       '@supabase/supabase-js':
         specifier: ^2.104.1
         version: 2.104.1
+      '@ton-pay/api':
+        specifier: ^0.3.2
+        version: 0.3.2
+      '@ton-pay/ui-react':
+        specifier: ^0.3.2
+        version: 0.3.2(@tonconnect/ui-react@2.4.4(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(react@19.2.5)(typescript@5.7.3)
       '@ton/core':
         specifier: ^0.63.1
         version: 0.63.1(@ton/crypto@3.3.0)
@@ -119,6 +125,9 @@ importers:
       '@ton/ton':
         specifier: ^16.2.4
         version: 16.2.4(@ton/core@0.63.1(@ton/crypto@3.3.0))(@ton/crypto@3.3.0)
+      '@tonconnect/ui-react':
+        specifier: ^2.4.4
+        version: 2.4.4(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
       '@vercel/analytics':
         specifier: 1.6.1
         version: 1.6.1(next@16.2.4(@babel/core@7.29.0)(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(react@19.2.5)
@@ -1570,6 +1579,40 @@ packages:
   '@tailwindcss/postcss@4.2.4':
     resolution: {integrity: sha512-wgAVj6nUWAolAu8YFvzT2cTBIElWHkjZwFYovF+xsqKsW2ADxM/X2opxj5NsF/qVccAOjRNe8X2IdPzMsWyHTg==}
 
+  '@telegram-apps/bridge@2.11.0':
+    resolution: {integrity: sha512-kBZjWRRp/lxKeQ8r8cDWUY9EjxUtyeh/9xTQjsjuGRsCR5XTO1cyVbvcvqzHn53csGx3aBs+fOR3Pk3b6w2JHg==}
+    deprecated: This package is not supported anymore. Use @tma.js/bridge instead
+
+  '@telegram-apps/navigation@1.0.14':
+    resolution: {integrity: sha512-bqNgF/J8Po7ZtsELm3E1a6aPr7awwxO3sIqD8J6u12urOlGoW5+1KxKKbkPa58mgXuQdsltd8apI+OVy0IYiUA==}
+
+  '@telegram-apps/sdk@3.11.8':
+    resolution: {integrity: sha512-vlpkYzMJCV9Cadsn9Q+/hbHNR39j5o96N9z4CjZ6AFHkkxOeOqVRrq9zRBw0gmffROkF2bU0WQxhRj8KZ/bPhw==}
+
+  '@telegram-apps/signals@1.1.2':
+    resolution: {integrity: sha512-1P1kdCLX7MfETGPxH7f3UZKIsdE7Tz5S7QmN4Km1sbYQMakD5Bi1NecSMR7/wnHp50gWMI1JzENcMtCEmouhSg==}
+
+  '@telegram-apps/toolkit@2.1.3':
+    resolution: {integrity: sha512-LPUBL7hxQTOr+Dowyk9a1O82nQS4ja4+OYiYWtvqq5nNUHC6Gbbus0zGWCbFcj9CLnIzaeb5HWOg5iSnhoRcyg==}
+
+  '@telegram-apps/transformers@2.2.6':
+    resolution: {integrity: sha512-MMBRs3demeBT9Cd614KKZmak7eEyNdEbfu99a0SwEEJe2oIODjJLrUxrhUcAOc5wvTRfrKka27VXVgruauLhdg==}
+    deprecated: This package is not supported anymore. Use @tma.js/transfomers instead
+
+  '@telegram-apps/types@2.0.3':
+    resolution: {integrity: sha512-pXh9BdnLZF3e2BGc4WL+RTRMAUpqKpaSP3Rs8rB4WyRwIoRSGWFKE4gtT/9m42LGixB8YVwdo/pJ+9XO765XEA==}
+    deprecated: This package is not supported anymore. Use @tma.js/types instead
+
+  '@ton-pay/api@0.3.2':
+    resolution: {integrity: sha512-nxNw0p0hLLSCLCdDwDPfT5NI9Ks8uxfjrJW0s+uFANLu5nLOeRXpE38m+QZehsfx90JG03ju6qnhjzI8sjuA2w==}
+
+  '@ton-pay/ui-react@0.3.2':
+    resolution: {integrity: sha512-uZfeHXIMVcw34Duu2RGHMQq1cQsFRzM3quu3vMGwwxD/TYn9Om953QY5GO8CxfkI6lNpznQDJam+YBTtBEie5Q==}
+    engines: {node: '>=18.0.0'}
+    peerDependencies:
+      '@tonconnect/ui-react': ^2.2.0
+      react: '>=18.0.0'
+
   '@ton/core@0.63.1':
     resolution: {integrity: sha512-hDWMjlKzc18W2E4OeV3hUP8ohRJNHPD4Wd1+AQJj8zshZyCRT0usrvnExgbNUTo/vntDqCGMzgYWbXxyaA+L4g==}
     peerDependencies:
@@ -1586,6 +1629,27 @@ packages:
     peerDependencies:
       '@ton/core': '>=0.63.0 <1.0.0'
       '@ton/crypto': '>=3.2.0'
+
+  '@tonconnect/isomorphic-eventsource@0.0.2':
+    resolution: {integrity: sha512-B4UoIjPi0QkvIzZH5fV3BQLWrqSYABdrzZQSI9sJA9aA+iC0ohOzFwVVGXanlxeDAy1bcvPbb29f6sVUk0UnnQ==}
+
+  '@tonconnect/isomorphic-fetch@0.0.3':
+    resolution: {integrity: sha512-jIg5nTrDwnite4fXao3dD83eCpTvInTjZon/rZZrIftIegh4XxyVb5G2mpMqXrVGk1e8SVXm3Kj5OtfMplQs0w==}
+
+  '@tonconnect/protocol@2.4.0':
+    resolution: {integrity: sha512-3xg6sMWIrSgW7/f7iPgOb2BI3LaMScjDMqfu20fcEMbOVvNFk3TGAUKK5cJ3pfvUINsyLgPoylcIbPap37jXiA==}
+
+  '@tonconnect/sdk@3.4.1':
+    resolution: {integrity: sha512-eVH8erAFout89gXYHXua/es+mmLPiW1r7ng9hgHKYQv85HLq8/zzQEkbJpbTlnIuQ6CJ/QKchjMsIgYz3BYCUQ==}
+
+  '@tonconnect/ui-react@2.4.4':
+    resolution: {integrity: sha512-4qpAABZK+nsJSQPGAVsj6xPtQ6HkqGIn/M984dNgp5eqVoaVHti0rCMOqcTutb3BScAvWLJoo3hONqNIg2fuEQ==}
+    peerDependencies:
+      react: '>=17.0.0'
+      react-dom: '>=17.0.0'
+
+  '@tonconnect/ui@2.4.4':
+    resolution: {integrity: sha512-XgIHAkdimDk+YeRDPsQp7eOz2lM4aScYL3hiTP1Z9YgWRVROjEqTbw5ZP9pt6rgmYTzL26QpqhI6uNTFdYNFIA==}
 
   '@tweenjs/tween.js@23.1.3':
     resolution: {integrity: sha512-vJmvvwFxYuGnF2axRtPYocag6Clbb5YS7kLL+SO/TeVFzHqDIWrNKYtcsPMibjDx9O+bu+psAy9NKfWklassUA==}
@@ -2001,6 +2065,9 @@ packages:
     engines: {node: '>=6.0.0'}
     hasBin: true
 
+  better-promises@0.4.1:
+    resolution: {integrity: sha512-cDW7eMvhvCoWzSih5o/OxsAgTUfP05yGMq77xNZUTmcZoNU9vEeFZJ+yJJi4lnocvxFrVFKsG0Yxt7ZnuYJEig==}
+
   bidi-js@1.0.3:
     resolution: {integrity: sha512-RKshQI1R3YQ+n9YJz2QQ147P66ELpa1FQEg20Dk8oW9t2KgLbpDLLp9aGZ7y8WHSshDknG0bknqGw5/tyCs5tw==}
 
@@ -2067,6 +2134,9 @@ packages:
   class-variance-authority@0.7.1:
     resolution: {integrity: sha512-Ka+9Trutv7G8M6WT6SeiRWz792K5qEqIGEGzXKhAE6xOWAY6pPH8U+9IY3oCMv6kqTmLsv7Xh/2w2RigkePMsg==}
 
+  classnames@2.5.1:
+    resolution: {integrity: sha512-saHYOzhIQs6wy2sVxTM6bUDsQO4F50V9RQ22qBpEdCW+I+/Wmke2HOl6lS6dTpdxVhb88/I6+Hs+438c3lfUow==}
+
   client-only@0.0.1:
     resolution: {integrity: sha512-IV3Ou0jSMzZrd3pZ48nLkT9DA7Ag1pnPzaiQhpW7c3RbcqqzvzzVu+L8gfqMp/8IM2MQtSiqaCxrrcfu8I8rMA==}
 
@@ -2109,6 +2179,9 @@ packages:
   cross-spawn@7.0.6:
     resolution: {integrity: sha512-uV2QOWP2nWzsy2aMp8aRibhi9dlzF5Hgh5SHaB9OiTGEyDTiJJyx0uy51QXdyWbtAHNua4XJzUKca3OzKUd3vA==}
     engines: {node: '>= 8'}
+
+  crypto-js@4.2.0:
+    resolution: {integrity: sha512-KALDyEYgpY+Rlob/iriUtjV6d5Eq+Y191A5g4UqLAi8CyGP9N1+FdVbkc1SxKc2r4YAYqG8JzO2KGL+AizD70Q==}
 
   csstype@3.2.3:
     resolution: {integrity: sha512-z1HGKcYy2xA8AGQfwrn0PAy+PB7X/GSj3UVJW9qKyn43xWa+gl5nXmU4qqLMRzWVLFC8KusUX8T/0kCiOYpAIQ==}
@@ -2212,6 +2285,10 @@ packages:
   deep-is@0.1.4:
     resolution: {integrity: sha512-oIPzksmTg4/MriiaYGO+okXDT7ztn/w3Eptv/+gSIdMdKsJo0u4CfYNFJPy+4SKMuCqGw2wxnA+URMg3t8a/bQ==}
 
+  deepmerge@4.3.1:
+    resolution: {integrity: sha512-3sUqbMEc77XqpdNO7FRyRog+eW3ph+GYCbj+rK+uYyRMuwsVy0rMiVtPn+QJlKFvWP/1PYpapqYn0Me2knFn+A==}
+    engines: {node: '>=0.10.0'}
+
   define-data-property@1.1.4:
     resolution: {integrity: sha512-rBMvIzlpA8v6E+SJZoo++HAYqsLrkg7MSfIinMPFhmkorw7X+dOXVJQs+QT69zGkzMyfDnIMN2Wid1+NbL3T+A==}
     engines: {node: '>= 0.4'}
@@ -2273,6 +2350,9 @@ packages:
   enhanced-resolve@5.21.0:
     resolution: {integrity: sha512-otxSQPw4lkOZWkHpB3zaEQs6gWYEsmX4xQF68ElXC/TWvGxGMSGOvoNbaLXm6/cS/fSfHtsEdw90y20PCd+sCA==}
     engines: {node: '>=10.13.0'}
+
+  error-kid@0.0.7:
+    resolution: {integrity: sha512-8mFs7ZaDWlBFgjOy4lHLMCe2+KZfZXGx5GOgh2VQ/M1CCIvSWzbl2OMl+5fdZgrgoUfhTeF+NPhmqfEvUhN8yw==}
 
   es-abstract@1.24.2:
     resolution: {integrity: sha512-2FpH9Q5i2RRwyEP1AylXe6nYLR5OhaJTZwmlcP0dL/+JCbgg7yyEo/sEK6HeGZRf3dFpWwThaRHVApXSkW3xeg==}
@@ -2446,6 +2526,10 @@ packages:
 
   eventemitter3@4.0.7:
     resolution: {integrity: sha512-8guHBZCwKnFhYdHr2ysuRWErTwhoN2X8XELRlrRwpmfeY2jjuUN4taQMsULKUVo1K4DvZl+0pgfyoysHxvmvEw==}
+
+  eventsource@2.0.2:
+    resolution: {integrity: sha512-IzUmBGPR3+oUG9dUeXynyNmf91/3zUSJg1lCktzKw47OXuhco54U3r9B7O4XX+Rb1Itm9OZ2b0RkTs10bICOxA==}
+    engines: {node: '>=12.0.0'}
 
   expect-type@1.3.0:
     resolution: {integrity: sha512-knvyeauYhqjOYvQ66MznSMs83wmHrCycNEN6Ao+2AeYEfxUIkuiVxdEa1qlGEPK+We3n0THiDciYSsCcgW/DoA==}
@@ -3017,6 +3101,9 @@ packages:
   minimist@1.2.8:
     resolution: {integrity: sha512-2yyAR8qBkN3YuheJanUpWC5U3bb5osDywNB8RzDVlDwDHbocAJveqqj1u8+SVD7jkWT4yvsHCpWqqWqAxb0zCA==}
 
+  mitt@3.0.1:
+    resolution: {integrity: sha512-vKivATfr97l2/QBCYAkXYDbrIWPM2IIKEl7YPhjCvKlG3kE2gm+uBo6nEXK3M5/Ffh/FLpKExzOQ3JJoJGFKBw==}
+
   motion-dom@12.38.0:
     resolution: {integrity: sha512-pdkHLD8QYRp8VfiNLb8xIBJis1byQ9gPT3Jnh2jqfFtAsWUA3dEepDlsWe/xMpO8McV+VdpKVcp+E+TGJEtOoA==}
 
@@ -3207,6 +3294,11 @@ packages:
   punycode@2.3.1:
     resolution: {integrity: sha512-vYt7UD1U9Wg6138shLtLOvdAu+8DsC/ilFtEVHcH+wydcSpNE20AfSOduf6MkRFahL5FY7X1oU7nKVZFtfq8Fg==}
     engines: {node: '>=6'}
+
+  qrcode.react@3.2.0:
+    resolution: {integrity: sha512-YietHHltOHA4+l5na1srdaMx4sVSOjV9tamHs+mwiLWAMr6QVACRUw1Neax5CptFILcNoITctJY0Ipyn5enQ8g==}
+    peerDependencies:
+      react: ^16.8.0 || ^17.0.0 || ^18.0.0
 
   queue-microtask@1.2.3:
     resolution: {integrity: sha512-NuaNSa6flKT5JaSYQzJok04JzTL1CA6aGhv5rfLW3PgqA+M2ChpZQnAC8h8i4ZFkBS8X5RqkDBHA7r4hej3K9A==}
@@ -3583,6 +3675,9 @@ packages:
   tw-animate-css@1.3.3:
     resolution: {integrity: sha512-tXE2TRWrskc4TU3RDd7T8n8Np/wCfoeH9gz22c7PzYqNPQ9FBGFbWWzwL0JyHcFp+jHozmF76tbHfPAx22ua2Q==}
 
+  tweetnacl-util@0.15.1:
+    resolution: {integrity: sha512-RKJBIj8lySrShN4w6i/BonWp2Z/uxwC3h4y7xsRrpP59ZboCd0GpEVsOnMDYLMmKBpYhb5TgHzZXy7wTfYFBRw==}
+
   tweetnacl@1.0.3:
     resolution: {integrity: sha512-6rt+RN7aOi1nGMyC4Xa5DdYiukl2UWCbcJft7YhxReBGQD7OAM8Pbxw6YMo4r2diNEA8FEmu32YOn9rhaiE5yw==}
 
@@ -3624,6 +3719,10 @@ packages:
   typescript@5.7.3:
     resolution: {integrity: sha512-84MVSjMEHP+FQRPy3pX9sTVV/INIex71s9TL2Gm5FG/WG1SqXeKyZ0k7/blY/4FdOzI12CBy1vGc4og/eus0fw==}
     engines: {node: '>=14.17'}
+    hasBin: true
+
+  ua-parser-js@1.0.41:
+    resolution: {integrity: sha512-LbBDqdIC5s8iROCUjMbW1f5dJQTEFB1+KO9ogbvlb3nm9n4YHa5p4KTvFPWvh2Hs8gZMBuiB1/8+pdfe/tDPug==}
     hasBin: true
 
   ufo@1.6.3:
@@ -3676,6 +3775,22 @@ packages:
   utility-types@3.11.0:
     resolution: {integrity: sha512-6Z7Ma2aVEWisaL6TvBCy7P8rm2LQoPv6dJ7ecIaIixHcwfbJ0x7mWdbcwlIM5IGQxPZSFYeqRCqlOOeKoJYMkw==}
     engines: {node: '>= 4'}
+
+  valibot@1.0.0:
+    resolution: {integrity: sha512-1Hc0ihzWxBar6NGeZv7fPLY0QuxFMyxwYR2sF1Blu7Wq7EnremwY2W02tit2ij2VJT8HcSkHAQqmFfl77f73Yw==}
+    peerDependencies:
+      typescript: '>=5'
+    peerDependenciesMeta:
+      typescript:
+        optional: true
+
+  valibot@1.0.0-beta.14:
+    resolution: {integrity: sha512-tLyV2rE5QL6U29MFy3xt4AqMrn+/HErcp2ZThASnQvPMwfSozjV1uBGKIGiegtZIGjinJqn0SlBdannf18wENA==}
+    peerDependencies:
+      typescript: '>=5'
+    peerDependenciesMeta:
+      typescript:
+        optional: true
 
   vaul@1.1.2:
     resolution: {integrity: sha512-ZFkClGpWyI2WUQjdLJ/BaGuV6AVQiJ3uELGk3OYtP+B6yCO7Cmn9vPFXVJkRaGkOJu3m8bQMgtyzNHixULceQA==}
@@ -5199,6 +5314,65 @@ snapshots:
       postcss: 8.5.10
       tailwindcss: 4.2.4
 
+  '@telegram-apps/bridge@2.11.0(typescript@5.7.3)':
+    dependencies:
+      '@telegram-apps/signals': 1.1.2
+      '@telegram-apps/toolkit': 2.1.3
+      '@telegram-apps/transformers': 2.2.6(typescript@5.7.3)
+      '@telegram-apps/types': 2.0.3
+      better-promises: 0.4.1
+      error-kid: 0.0.7
+      mitt: 3.0.1
+      valibot: 1.0.0(typescript@5.7.3)
+    transitivePeerDependencies:
+      - typescript
+
+  '@telegram-apps/navigation@1.0.14': {}
+
+  '@telegram-apps/sdk@3.11.8(typescript@5.7.3)':
+    dependencies:
+      '@telegram-apps/bridge': 2.11.0(typescript@5.7.3)
+      '@telegram-apps/navigation': 1.0.14
+      '@telegram-apps/signals': 1.1.2
+      '@telegram-apps/toolkit': 2.1.3
+      '@telegram-apps/transformers': 2.2.6(typescript@5.7.3)
+      '@telegram-apps/types': 2.0.3
+      better-promises: 0.4.1
+      error-kid: 0.0.7
+      valibot: 1.0.0(typescript@5.7.3)
+    transitivePeerDependencies:
+      - typescript
+
+  '@telegram-apps/signals@1.1.2': {}
+
+  '@telegram-apps/toolkit@2.1.3': {}
+
+  '@telegram-apps/transformers@2.2.6(typescript@5.7.3)':
+    dependencies:
+      '@telegram-apps/toolkit': 2.1.3
+      '@telegram-apps/types': 2.0.3
+      valibot: 1.0.0-beta.14(typescript@5.7.3)
+    transitivePeerDependencies:
+      - typescript
+
+  '@telegram-apps/types@2.0.3': {}
+
+  '@ton-pay/api@0.3.2':
+    dependencies:
+      crypto-js: 4.2.0
+
+  '@ton-pay/ui-react@0.3.2(@tonconnect/ui-react@2.4.4(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(react@19.2.5)(typescript@5.7.3)':
+    dependencies:
+      '@telegram-apps/sdk': 3.11.8(typescript@5.7.3)
+      '@ton-pay/api': 0.3.2
+      '@tonconnect/sdk': 3.4.1
+      '@tonconnect/ui-react': 2.4.4(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
+      qrcode.react: 3.2.0(react@19.2.5)
+      react: 19.2.5
+    transitivePeerDependencies:
+      - encoding
+      - typescript
+
   '@ton/core@0.63.1(@ton/crypto@3.3.0)':
     dependencies:
       '@ton/crypto': 3.3.0
@@ -5222,6 +5396,47 @@ snapshots:
       zod: 3.25.76
     transitivePeerDependencies:
       - debug
+
+  '@tonconnect/isomorphic-eventsource@0.0.2':
+    dependencies:
+      eventsource: 2.0.2
+
+  '@tonconnect/isomorphic-fetch@0.0.3':
+    dependencies:
+      node-fetch: 2.7.0
+    transitivePeerDependencies:
+      - encoding
+
+  '@tonconnect/protocol@2.4.0':
+    dependencies:
+      tweetnacl: 1.0.3
+      tweetnacl-util: 0.15.1
+
+  '@tonconnect/sdk@3.4.1':
+    dependencies:
+      '@tonconnect/isomorphic-eventsource': 0.0.2
+      '@tonconnect/isomorphic-fetch': 0.0.3
+      '@tonconnect/protocol': 2.4.0
+    transitivePeerDependencies:
+      - encoding
+
+  '@tonconnect/ui-react@2.4.4(react-dom@19.2.5(react@19.2.5))(react@19.2.5)':
+    dependencies:
+      '@tonconnect/ui': 2.4.4
+      react: 19.2.5
+      react-dom: 19.2.5(react@19.2.5)
+    transitivePeerDependencies:
+      - encoding
+
+  '@tonconnect/ui@2.4.4':
+    dependencies:
+      '@tonconnect/sdk': 3.4.1
+      classnames: 2.5.1
+      csstype: 3.2.3
+      deepmerge: 4.3.1
+      ua-parser-js: 1.0.41
+    transitivePeerDependencies:
+      - encoding
 
   '@tweenjs/tween.js@23.1.3': {}
 
@@ -5644,6 +5859,10 @@ snapshots:
 
   baseline-browser-mapping@2.10.22: {}
 
+  better-promises@0.4.1:
+    dependencies:
+      error-kid: 0.0.7
+
   bidi-js@1.0.3:
     dependencies:
       require-from-string: 2.0.2
@@ -5719,6 +5938,8 @@ snapshots:
     dependencies:
       clsx: 2.1.1
 
+  classnames@2.5.1: {}
+
   client-only@0.0.1: {}
 
   clsx@2.1.1: {}
@@ -5760,6 +5981,8 @@ snapshots:
       path-key: 3.1.1
       shebang-command: 2.0.0
       which: 2.0.2
+
+  crypto-js@4.2.0: {}
 
   csstype@3.2.3: {}
 
@@ -5848,6 +6071,8 @@ snapshots:
 
   deep-is@0.1.4: {}
 
+  deepmerge@4.3.1: {}
+
   define-data-property@1.1.4:
     dependencies:
       es-define-property: 1.0.1
@@ -5909,6 +6134,8 @@ snapshots:
     dependencies:
       graceful-fs: 4.2.11
       tapable: 2.3.3
+
+  error-kid@0.0.7: {}
 
   es-abstract@1.24.2:
     dependencies:
@@ -6229,6 +6456,8 @@ snapshots:
   event-target-shim@5.0.1: {}
 
   eventemitter3@4.0.7: {}
+
+  eventsource@2.0.2: {}
 
   expect-type@1.3.0: {}
 
@@ -6745,6 +6974,8 @@ snapshots:
 
   minimist@1.2.8: {}
 
+  mitt@3.0.1: {}
+
   motion-dom@12.38.0:
     dependencies:
       motion-utils: 12.36.0
@@ -6934,6 +7165,10 @@ snapshots:
   proxy-from-env@2.1.0: {}
 
   punycode@2.3.1: {}
+
+  qrcode.react@3.2.0(react@19.2.5):
+    dependencies:
+      react: 19.2.5
 
   queue-microtask@1.2.3: {}
 
@@ -7386,6 +7621,8 @@ snapshots:
 
   tw-animate-css@1.3.3: {}
 
+  tweetnacl-util@0.15.1: {}
+
   tweetnacl@1.0.3: {}
 
   type-check@0.4.0:
@@ -7441,6 +7678,8 @@ snapshots:
       - supports-color
 
   typescript@5.7.3: {}
+
+  ua-parser-js@1.0.41: {}
 
   ufo@1.6.3: {}
 
@@ -7507,6 +7746,14 @@ snapshots:
       react: 19.2.5
 
   utility-types@3.11.0: {}
+
+  valibot@1.0.0(typescript@5.7.3):
+    optionalDependencies:
+      typescript: 5.7.3
+
+  valibot@1.0.0-beta.14(typescript@5.7.3):
+    optionalDependencies:
+      typescript: 5.7.3
 
   vaul@1.1.2(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.5(react@19.2.5))(react@19.2.5):
     dependencies:

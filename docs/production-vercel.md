@@ -12,9 +12,13 @@ Confirm these tables exist:
 - `tg_wallets`
 - `tg_swaps`
 - `tg_tips`
+- `tg_external_tip_payments`
 - `tg_tip_batches`
+- `tg_tip_claims`
 - `tg_group_messages`
 - `waitlist`
+
+If your database already has the older schema, run `scripts/002_external_tip_payments.sql` once instead of rerunning the full init script.
 
 Use the Supabase project API URL for `NEXT_PUBLIC_SUPABASE_URL`, not the Postgres connection string.
 
@@ -39,12 +43,17 @@ Set these in Vercel for Production:
 |---|---|
 | `NEXT_PUBLIC_SUPABASE_URL` | `https://<project-ref>.supabase.co` |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key |
+| `NEXT_PUBLIC_APP_URL` | Public Vercel URL, e.g. `https://tipswap.vercel.app` |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role key |
 | `TELEGRAM_BOT_TOKEN` | Bot token from BotFather |
+| `TELEGRAM_BOT_USERNAME` | Bot username without `@`, e.g. `tipswapbot` |
 | `TELEGRAM_WEBHOOK_SECRET` | Random 32+ character secret |
 | `ADMIN_SETUP_TOKEN` | Random 32+ character admin token |
 | `WALLET_ENCRYPTION_KEY` | Random 32+ character encryption key |
 | `TON_API_KEY` | TONCenter API key |
+| `TONPAY_CHAIN` | `mainnet` |
+| `TONPAY_API_KEY` | Optional TON Pay Merchant API key for dashboard tracking |
+| `TONPAY_WEBHOOK_SECRET` | Optional TON Pay webhook secret from the TON Pay Merchant Dashboard |
 
 Do not set a Postgres connection string as `NEXT_PUBLIC_SUPABASE_URL`.
 
@@ -72,6 +81,12 @@ Expected:
 {"ok":true,"bot":"tipswap"}
 ```
 
+Also verify the TON Connect manifest:
+
+```text
+https://<your-vercel-domain>/tonconnect-manifest.json
+```
+
 ## 5. Set Telegram Webhook
 
 Open:
@@ -86,6 +101,18 @@ The webhook should be:
 
 ```text
 https://<your-vercel-domain>/api/bot
+```
+
+In BotFather, set the Mini App / Web App URL to:
+
+```text
+https://<your-vercel-domain>/miniapp
+```
+
+If you use the optional TON Pay Merchant Dashboard, set its webhook URL to:
+
+```text
+https://<your-vercel-domain>/api/tonpay/webhook
 ```
 
 Allowed updates should include:
@@ -129,6 +156,8 @@ From both:
 /balance
 ```
 
+Open the Mini App from the `/start` or `/help` link and confirm the wallet dashboard loads.
+
 Fund the sender managed wallet with a small TON amount.
 
 Test direct TON tip:
@@ -136,6 +165,8 @@ Test direct TON tip:
 ```text
 /tip 0.02 TON @recipientusername
 ```
+
+If `@recipientusername` has not started the bot, the sender should receive a claim link. Send that link to the recipient, then confirm the quote from the sender account after the recipient opens it.
 
 Test STON.fi route:
 
@@ -154,8 +185,10 @@ Production currently limits batch tips to 3 recipients because each recipient is
 ## 8. Operational Notes
 
 - Use mainnet only and start with small amounts.
-- External wallets can receive tips, but only managed wallets can send bot-signed swaps/tips.
+- Managed wallets send bot-signed tips and swaps from Telegram commands.
+- External wallets can receive tips, and can send Mini App tips by signing with TON Connect. Same-token external sends use TON Pay; cross-token external sends use STON.fi transaction messages.
 - STON.fi quote failures are expected for illiquid routes. Try TON -> USDT or TON -> STON first.
+- TON Pay webhooks only finalize TON Pay direct external-wallet transfers. STON.fi external swaps are submitted through the wallet and remain `sending` until separate chain reconciliation is added.
 - If Telegram reports webhook errors, check `/admin/setup` and Vercel function logs.
 - If webhook executions time out, confirm Fluid Compute is enabled in Vercel project settings.
 - If TON RPC rate limits appear, confirm `TON_API_KEY` is set in Vercel Production.

@@ -190,6 +190,53 @@ alter table public.tg_tip_batches
   add column if not exists expires_at timestamptz not null default now() + interval '5 minutes',
   add column if not exists updated_at timestamptz not null default now();
 
+-- ------------------------------------------------------------------
+-- tg_tip_claims — invite links for unregistered Telegram handles
+-- ------------------------------------------------------------------
+create table if not exists public.tg_tip_claims (
+  id uuid primary key default gen_random_uuid(),
+  code text not null unique,
+  sender_user_id uuid not null references public.tg_users(id) on delete cascade,
+  target_username text not null,
+  offer_token text not null,
+  ask_token text not null,
+  ask_amount text not null,
+  status text not null default 'pending',
+  tip_id uuid references public.tg_tips(id) on delete set null,
+  error text,
+  expires_at timestamptz not null default now() + interval '7 days',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.tg_tip_claims enable row level security;
+
+alter table public.tg_tip_claims
+  add column if not exists code text,
+  add column if not exists sender_user_id uuid references public.tg_users(id) on delete cascade,
+  add column if not exists target_username text,
+  add column if not exists offer_token text,
+  add column if not exists ask_token text,
+  add column if not exists ask_amount text,
+  add column if not exists status text not null default 'pending',
+  add column if not exists tip_id uuid references public.tg_tips(id) on delete set null,
+  add column if not exists error text,
+  add column if not exists expires_at timestamptz not null default now() + interval '7 days',
+  add column if not exists updated_at timestamptz not null default now();
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'tg_tip_claims_code_key'
+      and conrelid = 'public.tg_tip_claims'::regclass
+  ) then
+    alter table public.tg_tip_claims add constraint tg_tip_claims_code_key unique(code);
+  end if;
+end;
+$$;
+
 create table if not exists public.tg_group_messages (
   id uuid primary key default gen_random_uuid(),
   chat_id bigint not null,
@@ -223,7 +270,63 @@ create index if not exists tg_tips_batch_idx on public.tg_tips(batch_id);
 create index if not exists tg_tip_batches_sender_idx on public.tg_tip_batches(sender_user_id);
 create index if not exists tg_tip_batches_status_idx on public.tg_tip_batches(status);
 create index if not exists tg_tip_batches_expires_idx on public.tg_tip_batches(expires_at);
+create index if not exists tg_tip_claims_sender_idx on public.tg_tip_claims(sender_user_id);
+create index if not exists tg_tip_claims_target_idx on public.tg_tip_claims(target_username);
+create index if not exists tg_tip_claims_status_idx on public.tg_tip_claims(status);
+create index if not exists tg_tip_claims_expires_idx on public.tg_tip_claims(expires_at);
+create index if not exists tg_tip_claims_tip_idx on public.tg_tip_claims(tip_id);
 create index if not exists tg_group_messages_author_idx on public.tg_group_messages(author_user_id);
+
+-- ------------------------------------------------------------------
+-- tg_external_tip_payments — external-wallet Mini App sends
+-- ------------------------------------------------------------------
+create table if not exists public.tg_external_tip_payments (
+  id uuid primary key default gen_random_uuid(),
+  tip_id uuid not null references public.tg_tips(id) on delete cascade,
+  sender_user_id uuid not null references public.tg_users(id) on delete cascade,
+  recipient_user_id uuid not null references public.tg_users(id) on delete cascade,
+  sender_address text not null,
+  recipient_address text not null,
+  provider text not null,
+  asset text not null,
+  amount text not null,
+  reference text,
+  body_base64_hash text,
+  boc text,
+  tx_hash text,
+  trace_id text,
+  status text not null default 'pending',
+  error text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.tg_external_tip_payments enable row level security;
+
+alter table public.tg_external_tip_payments
+  add column if not exists tip_id uuid references public.tg_tips(id) on delete cascade,
+  add column if not exists sender_user_id uuid references public.tg_users(id) on delete cascade,
+  add column if not exists recipient_user_id uuid references public.tg_users(id) on delete cascade,
+  add column if not exists sender_address text,
+  add column if not exists recipient_address text,
+  add column if not exists provider text,
+  add column if not exists asset text,
+  add column if not exists amount text,
+  add column if not exists reference text,
+  add column if not exists body_base64_hash text,
+  add column if not exists boc text,
+  add column if not exists tx_hash text,
+  add column if not exists trace_id text,
+  add column if not exists status text not null default 'pending',
+  add column if not exists error text,
+  add column if not exists updated_at timestamptz not null default now();
+
+create unique index if not exists tg_external_tip_payments_tip_idx on public.tg_external_tip_payments(tip_id);
+create unique index if not exists tg_external_tip_payments_reference_idx
+  on public.tg_external_tip_payments(reference)
+  where reference is not null;
+create index if not exists tg_external_tip_payments_sender_idx on public.tg_external_tip_payments(sender_user_id);
+create index if not exists tg_external_tip_payments_status_idx on public.tg_external_tip_payments(status);
 
 -- ------------------------------------------------------------------
 -- updated_at trigger
@@ -250,4 +353,12 @@ create trigger tg_tips_updated before update on public.tg_tips
 
 drop trigger if exists tg_tip_batches_updated on public.tg_tip_batches;
 create trigger tg_tip_batches_updated before update on public.tg_tip_batches
+  for each row execute function public.touch_updated_at();
+
+drop trigger if exists tg_tip_claims_updated on public.tg_tip_claims;
+create trigger tg_tip_claims_updated before update on public.tg_tip_claims
+  for each row execute function public.touch_updated_at();
+
+drop trigger if exists tg_external_tip_payments_updated on public.tg_external_tip_payments;
+create trigger tg_external_tip_payments_updated before update on public.tg_external_tip_payments
   for each row execute function public.touch_updated_at();

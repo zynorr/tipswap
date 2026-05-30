@@ -13,6 +13,7 @@
  * and chain state fresh from TON RPC.
  */
 import "server-only"
+import { randomBytes } from "node:crypto"
 import { Bot, InlineKeyboard } from "grammy"
 import {
   getOrCreateUser,
@@ -32,6 +33,10 @@ import {
   updateUserPreferences,
   createTipBatch,
   createTipQuote,
+  createTipClaimInvite,
+  getTipClaimByCode,
+  claimTipClaimForQuote,
+  updateTipClaimStatus,
   claimTipForSend,
   claimTipBatchForSend,
   updateTipStatus,
@@ -43,6 +48,7 @@ import {
   type TgUser,
   type TgWallet,
   type TgTip,
+  type TgTipClaim,
 } from "./users"
 import { getBalance, getJettonBalance, getNetworkDisplay } from "@/lib/wallet/ton"
 import { executeSwap, executeTipSwap, quoteTipSwap, resolveToken, TOKENS } from "@/lib/ston/swap"
@@ -50,6 +56,8 @@ import { Address, fromNano } from "@ton/core"
 
 let _bot: Bot | null = null
 const MAX_BATCH_RECIPIENTS = 3
+const CLAIM_INVITE_DAYS = 7
+const CLAIM_START_PREFIX = "claim_"
 
 function commandText(match: unknown) {
   if (typeof match === "string") return match.trim()
@@ -66,8 +74,8 @@ function normalizeUsername(username: string | null | undefined) {
   return username?.replace(/^@/, "").trim().toLowerCase() ?? ""
 }
 
-function isExpired(tip: Pick<TgTip, "expires_at">) {
-  return new Date(tip.expires_at).getTime() <= Date.now()
+function isExpired(expiring: { expires_at: string }) {
+  return new Date(expiring.expires_at).getTime() <= Date.now()
 }
 
 function tokenList() {
@@ -80,6 +88,7 @@ function tipUsage() {
     "/tip <amount> <receive-token> @recipient",
     "/tip <amount> <receive-token> from <pay-token> @recipient",
     `up to ${MAX_BATCH_RECIPIENTS} recipients per tip command`,
+    "unregistered single recipients get a claim link",
     "examples:",
     "/tip 5 USDT @alice",
     "/tip 5 USDT from TON @alice",
@@ -108,6 +117,37 @@ function parseTipArgs(args: string[]) {
   const unique = [...new Set(usernames as string[])]
   if (unique.length !== usernames.length) return null
   return { amount, ask, offer, recipientUsernames: unique }
+}
+
+function botUsername() {
+  return (process.env.TELEGRAM_BOT_USERNAME ?? "tipswapbot").replace(/^@/, "")
+}
+
+function newClaimCode() {
+  return randomBytes(16).toString("base64url")
+}
+
+function claimLink(code: string) {
+  return `https://t.me/${botUsername()}?start=${CLAIM_START_PREFIX}${code}`
+}
+
+function miniAppUrl(path = "/miniapp") {
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL
+  if (!appUrl) return null
+  return `${appUrl.replace(/\/$/, "")}${path}`
+}
+
+function miniAppKeyboard(path = "/miniapp") {
+  const url = miniAppUrl(path)
+  if (!url) return null
+  return new InlineKeyboard().webApp("Open Mini App", url)
+}
+
+function claimCodeFromStart(args: string[]) {
+  const payload = args[0] ?? ""
+  if (!payload.startsWith(CLAIM_START_PREFIX)) return null
+  const code = payload.slice(CLAIM_START_PREFIX.length)
+  return /^[A-Za-z0-9_-]{8,128}$/.test(code) ? code : null
 }
 
 function parseSetTipArgs(args: string[]) {
@@ -260,6 +300,209 @@ function tipConfirmText(params: {
   ].filter(Boolean).join("\n")
 }
 
+async function createPendingTipClaim(params: {
+  sender: TgUser
+  targetUsername: string
+  offerToken: string
+  askToken: string
+  askAmount: string
+}) {
+  const claim = await createTipClaimInvite({
+    code: newClaimCode(),
+    senderUserId: params.sender.id,
+    targetUsername: params.targetUsername,
+    offerToken: params.offerToken,
+    askToken: params.askToken,
+    askAmount: params.askAmount,
+    expiresAt: new Date(Date.now() + CLAIM_INVITE_DAYS * 24 * 60 * 60 * 1000).toISOString(),
+  })
+  return claim
+}
+
+function claimInviteText(claim: TgTipClaim) {
+  const link = claimLink(claim.code)
+  const appLink = miniAppUrl(`/miniapp?claim=${encodeURIComponent(claim.code)}`)
+  return [
+    `@${claim.target_username} has not started TipSwap yet.`,
+    "",
+    "Send them this claim link:",
+    `<a href="${link}">${link}</a>`,
+    appLink ? `Mini App: <a href="${appLink}">${appLink}</a>` : null,
+    "",
+    `They can choose their TipSwap wallet or connect their own wallet before claiming.`,
+    "I will ask you to confirm before any funds move.",
+    `Expires in ${CLAIM_INVITE_DAYS} days.`,
+  ].filter(Boolean).join("\n")
+}
+
+async function failClaim(claim: TgTipClaim, err: unknown) {
+  const msg = (err as Error).message ?? String(err)
+  await updateTipClaimStatus(claim.id, {
+    status: "failed",
+    error: msg.slice(0, 300),
+  })
+  return msg
+}
+
+async function handleStartClaim(
+  ctx: {
+    reply: (text: string, options?: Record<string, unknown>) => Promise<unknown>
+    api?: { sendMessage: (chatId: number, text: string, options?: Record<string, unknown>) => Promise<unknown> }
+  },
+  tgUser: { id: number; username?: string; first_name?: string },
+  code: string,
+) {
+  const claim = await getTipClaimByCode(code)
+  if (!claim) {
+    await ctx.reply("That tip claim link is not valid.")
+    return
+  }
+
+  if (isExpired(claim)) {
+    await updateTipClaimStatus(claim.id, { status: "expired" })
+    await ctx.reply("That tip claim link has expired. Ask the sender for a fresh /tip.")
+    return
+  }
+
+  const currentUsername = normalizeUsername(tgUser.username)
+  if (!currentUsername || currentUsername !== normalizeUsername(claim.target_username)) {
+    await ctx.reply(
+      [
+        `This claim link is for @${claim.target_username}.`,
+        "",
+        currentUsername
+          ? `You are currently @${currentUsername}. Ask the sender for a new tip link if this changed.`
+          : "Set that Telegram username first, then open the claim link again.",
+      ].join("\n"),
+    )
+    return
+  }
+
+  const { user: recipient, wallet: recipientWallet } = await getOrCreateUser({
+    tgId: tgUser.id,
+    tgUsername: tgUser.username ?? null,
+    firstName: tgUser.first_name ?? null,
+  })
+
+  if (recipient.id === claim.sender_user_id) {
+    await updateTipClaimStatus(claim.id, { status: "cancelled", error: "Sender claimed own invite" })
+    await ctx.reply("You cannot claim your own tip invite.")
+    return
+  }
+
+  if (claim.status === "quoted" && claim.tip_id) {
+    const existingTip = await getTipById(claim.tip_id)
+    if (existingTip?.status === "sent") {
+      await ctx.reply("This tip has already been sent.")
+      return
+    }
+    if (existingTip?.status === "cancelled") {
+      await ctx.reply("The sender cancelled this tip.")
+      return
+    }
+    if (existingTip?.status === "expired") {
+      await ctx.reply("The confirmation quote for this tip expired. Ask the sender for a fresh /tip.")
+      return
+    }
+    await ctx.reply("This claim is already waiting for the sender to confirm.")
+    return
+  }
+
+  if (claim.status !== "pending") {
+    await ctx.reply(`This tip claim is already ${claim.status}.`)
+    return
+  }
+
+  const lockedClaim = await claimTipClaimForQuote(claim.id)
+  if (!lockedClaim) {
+    await ctx.reply("This claim is already being prepared. Try again shortly.")
+    return
+  }
+
+  let createdTip: TgTip | null = null
+  try {
+    const sender = await getUserById(claim.sender_user_id)
+    if (!sender) throw new Error("Tip sender could not be found")
+    const senderWallet = await getManagedWallet(sender.id)
+    const quote = await quoteTipSwap({
+      offer: claim.offer_token,
+      ask: claim.ask_token,
+      askAmount: claim.ask_amount,
+      slippageBps: 100,
+    })
+    const tip = await createTipQuote({
+      senderUserId: sender.id,
+      recipientUserId: recipient.id,
+      source: "command",
+      senderWalletId: senderWallet.id,
+      recipientWalletId: recipientWallet.id,
+      recipientAddress: recipientWallet.address,
+      offerToken: quote.offerSymbol,
+      askToken: quote.askSymbol,
+      askAmount: claim.ask_amount,
+      askRaw: quote.askRaw,
+      quotedOfferAmount: quote.quotedOfferAmount,
+      offerRaw: quote.offerRaw,
+      expectedOut: quote.expectedOut,
+      minAskAmount: quote.minAskAmount,
+      slippageBps: quote.slippageBps,
+      expiresAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+    })
+    createdTip = tip
+
+    if (!ctx.api) throw new Error("Telegram API context is unavailable")
+    await ctx.api.sendMessage(
+      sender.tg_id,
+      [
+        `@${claim.target_username} opened your TipSwap claim link.`,
+        "",
+        tipConfirmText({
+          recipients: [{ user: recipient, wallet: recipientWallet, username: claim.target_username }],
+          amount: claim.ask_amount,
+          askSymbol: quote.askSymbol,
+          offerSymbol: quote.offerSymbol,
+          totalOffer: quote.quotedOfferAmount,
+          routerVersion: quote.routerVersion,
+          source: "command",
+        }),
+      ].join("\n"),
+      {
+        parse_mode: "HTML",
+        reply_markup: confirmationKeyboard({ id: tip.id, prefix: "tip" }),
+      },
+    )
+
+    await updateTipClaimStatus(claim.id, { status: "quoted", tipId: tip.id, error: null })
+
+    const recipientLabel = `@${recipient.tg_username ?? claim.target_username}`
+    await ctx.reply(
+      [
+        "<b>Tip claim ready</b>",
+        "",
+        `I asked @${sender.tg_username ?? "the sender"} to confirm ${claim.ask_amount} ${quote.askSymbol} for ${recipientLabel}.`,
+        `Your active wallet: <code>${recipientWallet.address}</code>`,
+        "",
+        "Funds move only after the sender confirms.",
+      ].join("\n"),
+      { parse_mode: "HTML" },
+    )
+  } catch (err) {
+    if (createdTip) {
+      try {
+        await updateTipStatus(createdTip.id, {
+          status: "cancelled",
+          error: "Could not notify sender for claim confirmation",
+        })
+      } catch (updateErr) {
+        console.error("[tipswap] failed to cancel claim tip:", updateErr)
+      }
+    }
+    const msg = await failClaim(claim, err)
+    console.error("[tipswap] claim invite failed:", err)
+    await ctx.reply(`Could not prepare this tip claim: ${msg}`)
+  }
+}
+
 async function executeClaimedTip(params: {
   tip: TgTip
   sender: TgUser
@@ -337,11 +580,18 @@ export function getBot(): Bot {
     if (!tgUser) return
 
     try {
+      const claimCode = claimCodeFromStart(commandArgs(ctx.match))
+      if (claimCode) {
+        await handleStartClaim(ctx, tgUser, claimCode)
+        return
+      }
+
       const { user, wallet, created } = await getOrCreateUser({
         tgId: tgUser.id,
         tgUsername: tgUser.username ?? null,
         firstName: tgUser.first_name ?? null,
       })
+      const replyMarkup = miniAppKeyboard()
 
       const lines = created
         ? [
@@ -360,7 +610,7 @@ export function getBot(): Bot {
             "/balance  —  view TON, USDT &amp; STON balances",
             "/connect  —  use your own TON wallet for balance tracking",
             "/managed  —  switch back to your TipSwap wallet",
-            "/tip      —  send a token tip to another registered user",
+            "/tip      —  send a token tip or invite a handle to claim",
             "/settings —  view tip defaults",
             "/help     —  full command list",
           ]
@@ -372,7 +622,10 @@ export function getBot(): Bot {
             "Try /balance, /wallet, /connect, /managed, /swap, /tip, /settings, or /help.",
           ]
 
-      await ctx.reply(lines.join("\n"), { parse_mode: "HTML" })
+      await ctx.reply(lines.filter(Boolean).join("\n"), {
+        parse_mode: "HTML",
+        ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
+      })
     } catch (err) {
       const msg = (err as Error).message ?? String(err)
       console.error("[tipswap] /start failed:", err)
@@ -392,7 +645,7 @@ export function getBot(): Bot {
         "/connect &lt;address&gt;  —  use your own TON wallet for balance tracking",
         "/managed  —  switch back to your TipSwap managed wallet",
         "/swap &lt;amount&gt; &lt;from&gt; &lt;to&gt;  —  cross-token swap",
-        "/tip &lt;amount&gt; &lt;receive-token&gt; @user  —  tip from TON",
+        "/tip &lt;amount&gt; &lt;receive-token&gt; @user  —  tip from TON or create a claim link",
         "/tip &lt;amount&gt; &lt;receive-token&gt; from &lt;pay-token&gt; @user  —  choose pay token",
         "/settip &lt;amount&gt; &lt;receive-token&gt; from &lt;pay-token&gt;  —  reaction default",
         "/receive &lt;token&gt;  —  set preferred receive token",
@@ -409,8 +662,11 @@ export function getBot(): Bot {
         Object.keys(TOKENS).join(", "),
         "",
         `📡 <b>${getNetworkDisplay()}</b>`,
-      ].join("\n"),
-      { parse_mode: "HTML" },
+      ].filter(Boolean).join("\n"),
+      {
+        parse_mode: "HTML",
+        ...(miniAppKeyboard() ? { reply_markup: miniAppKeyboard()! } : {}),
+      },
     )
   })
 
@@ -891,9 +1147,11 @@ export function getBot(): Bot {
       return
     }
 
+    let offerToken: ReturnType<typeof resolveToken>
+    let askToken: ReturnType<typeof resolveToken>
     try {
-      resolveToken(parsed.offer)
-      resolveToken(parsed.ask)
+      offerToken = resolveToken(parsed.offer)
+      askToken = resolveToken(parsed.ask)
     } catch (err) {
       await ctx.reply(`${(err as Error).message}\nSupported: ${tokenList()}`)
       return
@@ -911,7 +1169,21 @@ export function getBot(): Bot {
         }
         const recipient = await findUserByUsername(username)
         if (!recipient) {
-          await ctx.reply(`@${username} needs to start TipSwap first with /start.`)
+          if (parsed.recipientUsernames.length > 1) {
+            await ctx.reply(
+              `@${username} has not started TipSwap yet. Claim links currently support one unregistered recipient at a time; send a single-recipient /tip for @${username} or ask them to start @${botUsername()} first.`,
+            )
+            return
+          }
+
+          const claim = await createPendingTipClaim({
+            sender,
+            targetUsername: username,
+            offerToken: offerToken.symbol,
+            askToken: askToken.symbol,
+            askAmount: parsed.amount,
+          })
+          await ctx.reply(claimInviteText(claim), { parse_mode: "HTML" })
           return
         }
         if (recipient.id === sender.id || recipient.tg_id === tgUser.id) {

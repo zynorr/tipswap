@@ -106,6 +106,12 @@ export type TipSwapParams = TipQuoteParams & {
   recipientAddress: string
 }
 
+export type TonConnectMessage = {
+  address: string
+  amount: string
+  payload?: string
+}
+
 export function toRawAmount(amount: string, decimals: number) {
   const [whole, frac = ""] = amount.split(".")
   const padded = (frac + "0".repeat(decimals)).slice(0, decimals)
@@ -629,6 +635,84 @@ export async function executeTipSwap(params: TipSwapParams) {
     minAskAmount: quote.minAskAmount,
     slippageBps,
     network,
+  }
+}
+
+export async function buildExternalTipSwapTransaction(params: Omit<TipSwapParams, "mnemonic">) {
+  try {
+    Address.parse(params.recipientAddress)
+  } catch {
+    throw new SwapUserError("Recipient wallet address is invalid.")
+  }
+
+  const network = getNetwork()
+  const client = getTonClient(network)
+  const { offer, ask, slippageBps, simulation, quote } =
+    await simulateDirectTip(params)
+  const offerRaw = BigInt(quote.offerRaw)
+  const minAskAmount = BigInt(quote.minAskAmount)
+
+  const tonBalance = await getBalance(params.senderAddress)
+  const cost = requiredTonForSimulation(
+    simulation,
+    offer.symbol,
+    ask.symbol,
+    offerRaw,
+  )
+  if (tonBalance < cost.total) {
+    const lines = [
+      `Insufficient TON balance. Need ${formatTon(cost.total)} TON, wallet has ${formatTon(tonBalance)} TON.`,
+      "",
+    ]
+    if (offer.symbol === "TON") {
+      lines.push(`Tip swap amount: ${formatTon(cost.offerPart)} TON`)
+    }
+    lines.push(`Gas (STON.fi): ${formatTon(cost.gas)} TON`)
+    lines.push(`Safety buffer: ${formatTon(cost.buffer)} TON`)
+    throw new SwapUserError(lines.join("\n"))
+  }
+
+  if (offer.symbol !== "TON") {
+    const offerBalance = await getJettonBalance(params.senderAddress, offer.mainnet)
+    if (offerBalance < offerRaw) {
+      throw new SwapUserError(
+        `Insufficient ${offer.symbol} balance. Need ${formatTokenAmount(offerRaw, offer.decimals)} ${offer.symbol}, wallet has ${formatTokenAmount(offerBalance, offer.decimals)} ${offer.symbol}.`,
+      )
+    }
+  }
+
+  const { router, proxyTon } = createSwapRouter(client, simulation)
+  const txParams = await buildSwapTxParams({
+    router,
+    proxyTon,
+    simulation,
+    userAddress: params.senderAddress,
+    receiverAddress: params.recipientAddress,
+    offerSymbol: offer.symbol,
+    askSymbol: ask.symbol,
+    offerAddress: offer.mainnet,
+    askAddress: ask.mainnet,
+    offerAmount: offerRaw,
+    minAskAmount,
+  })
+
+  const message: TonConnectMessage = {
+    address: txParams.to.toString({ bounceable: true, testOnly: false }),
+    amount: txParams.value.toString(),
+    ...(txParams.body ? { payload: txParams.body.toBoc().toString("base64") } : {}),
+  }
+
+  return {
+    message,
+    offerAmount: quote.offerAmount,
+    offerRaw: quote.offerRaw,
+    expectedOut: quote.expectedOut,
+    expectedRaw: quote.expectedRaw,
+    askRaw: quote.askRaw,
+    minAskAmount: quote.minAskAmount,
+    slippageBps,
+    network,
+    routerVersion: `v${simulation.router.majorVersion}.${simulation.router.minorVersion}`,
   }
 }
 

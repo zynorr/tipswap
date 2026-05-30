@@ -78,6 +78,30 @@ export type TgTipBatch = {
   updated_at: string
 }
 
+export type TipClaimStatus =
+  | "pending"
+  | "quoting"
+  | "quoted"
+  | "failed"
+  | "cancelled"
+  | "expired"
+
+export type TgTipClaim = {
+  id: string
+  code: string
+  sender_user_id: string
+  target_username: string
+  offer_token: string
+  ask_token: string
+  ask_amount: string
+  status: TipClaimStatus
+  tip_id: string | null
+  error: string | null
+  expires_at: string
+  created_at: string
+  updated_at: string
+}
+
 export type TgGroupMessage = {
   id: string
   chat_id: number
@@ -86,6 +110,27 @@ export type TgGroupMessage = {
   author_tg_id: number
   author_username: string | null
   created_at: string
+}
+
+export type TgExternalTipPayment = {
+  id: string
+  tip_id: string
+  sender_user_id: string
+  recipient_user_id: string
+  sender_address: string
+  recipient_address: string
+  provider: "tonpay" | "stonfi"
+  asset: string
+  amount: string
+  reference: string | null
+  body_base64_hash: string | null
+  boc: string | null
+  tx_hash: string | null
+  trace_id: string | null
+  status: "pending" | "submitted" | "sent" | "failed"
+  error: string | null
+  created_at: string
+  updated_at: string
 }
 
 /**
@@ -109,15 +154,35 @@ export async function getOrCreateUser(input: {
   if (lookupErr) throw lookupErr
 
   if (existing) {
+    let user = existing
+    const profileUpdate: { tg_username?: string | null; first_name?: string | null } = {}
+    if (input.tgUsername !== undefined && input.tgUsername !== existing.tg_username) {
+      profileUpdate.tg_username = input.tgUsername ?? null
+    }
+    if (input.firstName !== undefined && input.firstName !== existing.first_name) {
+      profileUpdate.first_name = input.firstName ?? null
+    }
+    if (Object.keys(profileUpdate).length) {
+      const { data: updated, error: updateErr } = await supabase
+        .from("tg_users")
+        .update(profileUpdate)
+        .eq("id", existing.id as string)
+        .select()
+        .single()
+
+      if (updateErr) throw updateErr
+      user = updated
+    }
+
     const { data: wallet, error: wErr } = await supabase
       .from("tg_wallets")
       .select("*")
-      .eq("user_id", existing.id as string)
+      .eq("user_id", user.id as string)
       .eq("is_active", true)
       .single()
 
     if (wErr) throw wErr
-    return { user: existing as unknown as TgUser, wallet: wallet as unknown as TgWallet, created: false }
+    return { user: user as unknown as TgUser, wallet: wallet as unknown as TgWallet, created: false }
   }
 
   // 2. Insert user
@@ -441,6 +506,102 @@ export async function createTipQuote(input: {
   return data as unknown as TgTip
 }
 
+export async function createTipClaimInvite(input: {
+  code: string
+  senderUserId: string
+  targetUsername: string
+  offerToken: string
+  askToken: string
+  askAmount: string
+  expiresAt?: string
+}) {
+  const targetUsername = input.targetUsername.replace(/^@/, "").trim().toLowerCase()
+  const supabase = adminClient()
+  const { data, error } = await supabase
+    .from("tg_tip_claims")
+    .insert({
+      code: input.code,
+      sender_user_id: input.senderUserId,
+      target_username: targetUsername,
+      offer_token: input.offerToken,
+      ask_token: input.askToken,
+      ask_amount: input.askAmount,
+      status: "pending",
+      expires_at: input.expiresAt,
+    })
+    .select()
+    .single()
+
+  if (error) throw error
+  return data as unknown as TgTipClaim
+}
+
+export async function getTipClaimByCode(code: string) {
+  const supabase = adminClient()
+  const { data, error } = await supabase
+    .from("tg_tip_claims")
+    .select("*")
+    .eq("code", code)
+    .maybeSingle()
+
+  if (error) throw error
+  return data as unknown as TgTipClaim | null
+}
+
+export async function getRecentTipClaimsForUser(userId: string, limit = 8) {
+  const supabase = adminClient()
+  const { data, error } = await supabase
+    .from("tg_tip_claims")
+    .select("*")
+    .eq("sender_user_id", userId)
+    .order("created_at", { ascending: false })
+    .limit(limit)
+
+  if (error) throw error
+  return data as unknown as TgTipClaim[]
+}
+
+export async function claimTipClaimForQuote(id: string) {
+  const supabase = adminClient()
+  const { data, error } = await supabase
+    .from("tg_tip_claims")
+    .update({ status: "quoting" })
+    .eq("id", id)
+    .eq("status", "pending")
+    .select()
+    .maybeSingle()
+
+  if (error) throw error
+  return data as unknown as TgTipClaim | null
+}
+
+export async function updateTipClaimStatus(
+  id: string,
+  patch: {
+    status?: TipClaimStatus
+    tipId?: string | null
+    error?: string | null
+  },
+) {
+  const update: {
+    status?: TipClaimStatus
+    tip_id?: string | null
+    error?: string | null
+  } = {}
+
+  if ("status" in patch) update.status = patch.status
+  if ("tipId" in patch) update.tip_id = patch.tipId ?? null
+  if ("error" in patch) update.error = patch.error ?? null
+
+  const supabase = adminClient()
+  const { error } = await supabase
+    .from("tg_tip_claims")
+    .update(update)
+    .eq("id", id)
+
+  if (error) throw error
+}
+
 export async function getTipsByBatchId(batchId: string) {
   const supabase = adminClient()
   const { data, error } = await supabase
@@ -566,6 +727,100 @@ export async function updateTipStatus(
     .eq("id", id)
 
   if (error) throw error
+}
+
+export async function createExternalTipPayment(input: {
+  tipId: string
+  senderUserId: string
+  recipientUserId: string
+  senderAddress: string
+  recipientAddress: string
+  provider: "tonpay" | "stonfi"
+  asset: string
+  amount: string
+  reference?: string | null
+  bodyBase64Hash?: string | null
+}) {
+  const supabase = adminClient()
+  const { data, error } = await supabase
+    .from("tg_external_tip_payments")
+    .insert({
+      tip_id: input.tipId,
+      sender_user_id: input.senderUserId,
+      recipient_user_id: input.recipientUserId,
+      sender_address: input.senderAddress,
+      recipient_address: input.recipientAddress,
+      provider: input.provider,
+      asset: input.asset,
+      amount: input.amount,
+      reference: input.reference ?? null,
+      body_base64_hash: input.bodyBase64Hash ?? null,
+      status: "pending",
+    })
+    .select()
+    .single()
+
+  if (error) throw error
+  return data as unknown as TgExternalTipPayment
+}
+
+export async function getExternalTipPaymentByTipId(tipId: string) {
+  const supabase = adminClient()
+  const { data, error } = await supabase
+    .from("tg_external_tip_payments")
+    .select("*")
+    .eq("tip_id", tipId)
+    .maybeSingle()
+
+  if (error) throw error
+  return data as unknown as TgExternalTipPayment | null
+}
+
+export async function getExternalTipPaymentByReference(reference: string) {
+  const supabase = adminClient()
+  const { data, error } = await supabase
+    .from("tg_external_tip_payments")
+    .select("*")
+    .eq("reference", reference)
+    .maybeSingle()
+
+  if (error) throw error
+  return data as unknown as TgExternalTipPayment | null
+}
+
+export async function updateExternalTipPayment(
+  id: string,
+  patch: {
+    status?: TgExternalTipPayment["status"]
+    boc?: string | null
+    txHash?: string | null
+    traceId?: string | null
+    error?: string | null
+  },
+) {
+  const update: {
+    status?: TgExternalTipPayment["status"]
+    boc?: string | null
+    tx_hash?: string | null
+    trace_id?: string | null
+    error?: string | null
+  } = {}
+  if ("status" in patch) update.status = patch.status
+  if ("boc" in patch) update.boc = patch.boc ?? null
+  if ("txHash" in patch) update.tx_hash = patch.txHash ?? null
+  if ("traceId" in patch) update.trace_id = patch.traceId ?? null
+  if ("error" in patch) update.error = patch.error ?? null
+
+  const supabase = adminClient()
+  const { data, error } = await supabase
+    .from("tg_external_tip_payments")
+    .update(update)
+    .eq("id", id)
+    .select()
+    .single()
+
+  if (error) throw error
+  return data as unknown as TgExternalTipPayment
 }
 
 export async function updateSwapStatus(

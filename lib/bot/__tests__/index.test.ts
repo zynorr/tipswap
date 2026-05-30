@@ -5,7 +5,12 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 const ORIG_ENV = process.env
 
 beforeEach(() => {
-  process.env = { ...ORIG_ENV, TELEGRAM_BOT_TOKEN: "fake:test-token" }
+  process.env = {
+    ...ORIG_ENV,
+    TELEGRAM_BOT_TOKEN: "fake:test-token",
+    TELEGRAM_BOT_USERNAME: "tipswapbot",
+    NEXT_PUBLIC_APP_URL: "https://app.example.com",
+  }
   vi.clearAllMocks()
 })
 
@@ -81,6 +86,10 @@ vi.mock("../users", () => ({
   getUserByTgId: vi.fn(),
   createTipBatch: vi.fn(),
   createTipQuote: vi.fn(),
+  createTipClaimInvite: vi.fn(),
+  getTipClaimByCode: vi.fn(),
+  claimTipClaimForQuote: vi.fn(),
+  updateTipClaimStatus: vi.fn(),
   claimTipForSend: vi.fn(),
   claimTipBatchForSend: vi.fn(),
   updateTipStatus: vi.fn(),
@@ -106,6 +115,10 @@ import {
   getUserByTgId,
   createTipBatch,
   createTipQuote,
+  createTipClaimInvite,
+  getTipClaimByCode,
+  claimTipClaimForQuote,
+  updateTipClaimStatus,
   claimTipForSend,
   claimTipBatchForSend,
   updateTipStatus,
@@ -131,6 +144,10 @@ const mockGetUserById = vi.mocked(getUserById)
 const mockGetUserByTgId = vi.mocked(getUserByTgId)
 const mockCreateTipBatch = vi.mocked(createTipBatch)
 const mockCreateTipQuote = vi.mocked(createTipQuote)
+const mockCreateTipClaimInvite = vi.mocked(createTipClaimInvite)
+const mockGetTipClaimByCode = vi.mocked(getTipClaimByCode)
+const mockClaimTipClaimForQuote = vi.mocked(claimTipClaimForQuote)
+const mockUpdateTipClaimStatus = vi.mocked(updateTipClaimStatus)
 const mockClaimTipForSend = vi.mocked(claimTipForSend)
 const mockClaimTipBatchForSend = vi.mocked(claimTipBatchForSend)
 const mockUpdateTipStatus = vi.mocked(updateTipStatus)
@@ -189,9 +206,13 @@ vi.mock("grammy", () => {
       catch() {}
     },
     InlineKeyboard: class MockInlineKeyboard {
-      buttons: Array<{ text: string; data: string }> = []
+      buttons: Array<{ text: string; data?: string; web_app?: { url: string } }> = []
       text(text: string, data: string) {
         this.buttons.push({ text, data })
+        return this
+      }
+      webApp(text: string, url: string) {
+        this.buttons.push({ text, web_app: { url } })
         return this
       }
     },
@@ -330,6 +351,27 @@ const recipientTwoWallet = {
   is_active: true,
 }
 
+const newRecipientUser = {
+  id: "user-4",
+  tg_id: 77777,
+  tg_username: "newuser",
+  first_name: "New",
+  default_recv_token: "USDT",
+  reaction_tip_amount: "1",
+  reaction_recv_token: "USDT",
+  reaction_pay_token: "TON",
+}
+
+const newRecipientWallet = {
+  id: "wallet-5",
+  user_id: "user-4",
+  address: "UQDnewrecipientwallet000000000000000000000000000",
+  public_key: "0xnew",
+  encrypted_mnemonic: "...",
+  mode: "managed" as const,
+  is_active: true,
+}
+
 const tipRow = {
   id: "11111111-1111-4111-8111-111111111111",
   batch_id: null,
@@ -379,6 +421,22 @@ const batchRow = {
   status: "quoted" as const,
   error: null,
   expires_at: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+  created_at: new Date().toISOString(),
+  updated_at: new Date().toISOString(),
+}
+
+const claimRow = {
+  id: "44444444-4444-4444-8444-444444444444",
+  code: "claimcode123",
+  sender_user_id: "user-1",
+  target_username: "newuser",
+  offer_token: "TON",
+  ask_token: "USDT",
+  ask_amount: "5",
+  status: "pending" as const,
+  tip_id: null,
+  error: null,
+  expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
   created_at: new Date().toISOString(),
   updated_at: new Date().toISOString(),
 }
@@ -711,6 +769,7 @@ describe("/tip — quote flow", () => {
       network: "mainnet",
     })
     mockCreateTipQuote.mockResolvedValue(tipRow)
+    mockCreateTipClaimInvite.mockResolvedValue(claimRow)
   })
 
   it("replies with usage for invalid syntax", async () => {
@@ -846,15 +905,42 @@ describe("/tip — quote flow", () => {
     expect(mockQuoteTipSwap).not.toHaveBeenCalled()
   })
 
-  it("requires the recipient to be registered", async () => {
+  it("creates a claim link when a single recipient has not registered", async () => {
     mockFindUserByUsername.mockResolvedValue(null)
 
     const ctx = makeCtx({ command: "tip", argsText: "5 USDT from TON @alice" })
     await handler(ctx)
 
-    expect(ctx.reply).toHaveBeenCalledWith(
-      expect.stringContaining("@alice needs to start TipSwap first"),
+    expect(mockCreateTipClaimInvite).toHaveBeenCalledWith(
+      expect.objectContaining({
+        senderUserId: "user-1",
+        targetUsername: "alice",
+        offerToken: "TON",
+        askToken: "USDT",
+        askAmount: "5",
+      }),
     )
+    expect(ctx.reply).toHaveBeenCalledWith(
+      expect.stringContaining("https://t.me/tipswapbot?start=claim_claimcode123"),
+      expect.objectContaining({ parse_mode: "HTML" }),
+    )
+    expect(mockQuoteTipSwap).not.toHaveBeenCalled()
+  })
+
+  it("does not create claim links inside multi-recipient batches", async () => {
+    mockFindUserByUsername.mockImplementation(async (username: string) => {
+      if (username === "alice") return recipientUser
+      return null
+    })
+    mockGetActiveWallet.mockResolvedValue(recipientWallet)
+
+    const ctx = makeCtx({ command: "tip", argsText: "5 USDT @alice @newuser" })
+    await handler(ctx)
+
+    expect(ctx.reply).toHaveBeenCalledWith(
+      expect.stringContaining("Claim links currently support one unregistered recipient at a time"),
+    )
+    expect(mockCreateTipClaimInvite).not.toHaveBeenCalled()
     expect(mockQuoteTipSwap).not.toHaveBeenCalled()
   })
 
@@ -1275,6 +1361,19 @@ describe("/help — message format", () => {
     expect(text).toContain("/swap")
     expect(text).toContain("TON, USDT, STON")
     expect(text).toContain("TON Mainnet")
+    expect(ctx.reply).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        reply_markup: expect.objectContaining({
+          buttons: expect.arrayContaining([
+            expect.objectContaining({
+              text: "Open Mini App",
+              web_app: { url: "https://app.example.com/miniapp" },
+            }),
+          ]),
+        }),
+      }),
+    )
   })
 })
 
@@ -1451,6 +1550,19 @@ describe("/start — message format", () => {
     expect(text).toContain("EQDabc123")
     expect(text).toContain("/swap 0.1 TON USDT")
     expect(text).toContain("TON Mainnet")
+    expect(ctx.reply).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        reply_markup: expect.objectContaining({
+          buttons: expect.arrayContaining([
+            expect.objectContaining({
+              text: "Open Mini App",
+              web_app: { url: "https://app.example.com/miniapp" },
+            }),
+          ]),
+        }),
+      }),
+    )
   })
 
   it("replies with welcome back message for returning users", async () => {
@@ -1467,11 +1579,150 @@ describe("/start — message format", () => {
     expect(text).toContain("👋 Welcome back")
     expect(text).toContain("EQDabc123")
     expect(text).toContain("/balance, /wallet, /connect, /managed, /swap, /tip, /settings, or /help")
+    expect(ctx.reply).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        reply_markup: expect.objectContaining({
+          buttons: expect.arrayContaining([
+            expect.objectContaining({
+              text: "Open Mini App",
+              web_app: { url: "https://app.example.com/miniapp" },
+            }),
+          ]),
+        }),
+      }),
+    )
   })
 
   it("does not reply when ctx.from is missing", async () => {
     const ctx = { ...makeCtx({ command: "start" }), from: undefined } as unknown as Ctx
     await handler(ctx)
     expect(ctx.reply).not.toHaveBeenCalled()
+  })
+})
+
+describe("/start — claim links", () => {
+  let handler: Handler
+
+  beforeEach(() => {
+    getBot()
+    handler = getRegisteredHandlers().get("start")!
+    mockGetTipClaimByCode.mockResolvedValue(claimRow)
+    mockClaimTipClaimForQuote.mockResolvedValue({ ...claimRow, status: "quoting" })
+    mockGetOrCreateUser.mockResolvedValue({
+      user: newRecipientUser,
+      wallet: newRecipientWallet,
+      created: true,
+    })
+    mockGetUserById.mockImplementation(async (id: string) => {
+      if (id === "user-1") return mockUser
+      if (id === "user-4") return newRecipientUser
+      return null
+    })
+    mockGetManagedWallet.mockResolvedValue(managedWallet)
+    mockQuoteTipSwap.mockResolvedValue({
+      offerSymbol: "TON",
+      askSymbol: "USDT",
+      askAmount: "5",
+      askRaw: "5000000",
+      quotedOfferAmount: "2.5000",
+      offerRaw: "2500000000",
+      expectedOut: "5.0000",
+      expectedRaw: "5000000",
+      minAskAmount: "4950000",
+      slippageBps: 100,
+      routerVersion: "v2.2",
+      network: "mainnet",
+    })
+    mockCreateTipQuote.mockResolvedValue({
+      ...tipRow,
+      id: "55555555-5555-4555-8555-555555555555",
+      recipient_user_id: "user-4",
+      recipient_wallet_id: "wallet-5",
+      recipient_address: newRecipientWallet.address,
+    })
+  })
+
+  it("creates a normal tip quote and asks the sender to confirm", async () => {
+    const ctx = {
+      ...makeCtx({
+        command: "start",
+        argsText: "claim_claimcode123",
+        from: { id: 77777, username: "newuser", first_name: "New" },
+      }),
+      api: { sendMessage: vi.fn().mockResolvedValue(undefined) },
+    } as Ctx
+
+    await handler(ctx)
+
+    expect(mockGetTipClaimByCode).toHaveBeenCalledWith("claimcode123")
+    expect(mockClaimTipClaimForQuote).toHaveBeenCalledWith(claimRow.id)
+    expect(mockCreateTipQuote).toHaveBeenCalledWith(
+      expect.objectContaining({
+        senderUserId: "user-1",
+        recipientUserId: "user-4",
+        recipientWalletId: "wallet-5",
+        recipientAddress: newRecipientWallet.address,
+        offerToken: "TON",
+        askToken: "USDT",
+        askAmount: "5",
+      }),
+    )
+    expect(ctx.api?.sendMessage).toHaveBeenCalledWith(
+      12345,
+      expect.stringContaining("@newuser opened your TipSwap claim link"),
+      expect.objectContaining({
+        parse_mode: "HTML",
+        reply_markup: expect.objectContaining({
+          buttons: expect.arrayContaining([
+            { text: "Confirm", data: "tip:confirm:55555555-5555-4555-8555-555555555555" },
+          ]),
+        }),
+      }),
+    )
+    expect(mockUpdateTipClaimStatus).toHaveBeenCalledWith(claimRow.id, {
+      status: "quoted",
+      tipId: "55555555-5555-4555-8555-555555555555",
+      error: null,
+    })
+    expect(ctx.reply).toHaveBeenCalledWith(
+      expect.stringContaining("Tip claim ready"),
+      expect.objectContaining({ parse_mode: "HTML" }),
+    )
+  })
+
+  it("rejects claim links opened by a different Telegram username", async () => {
+    const ctx = makeCtx({
+      command: "start",
+      argsText: "claim_claimcode123",
+      from: { id: 77777, username: "someoneelse", first_name: "New" },
+    })
+
+    await handler(ctx)
+
+    expect(ctx.reply).toHaveBeenCalledWith(expect.stringContaining("This claim link is for @newuser"))
+    expect(mockClaimTipClaimForQuote).not.toHaveBeenCalled()
+    expect(mockCreateTipQuote).not.toHaveBeenCalled()
+  })
+
+  it("does not rebuild a claim that is already waiting for confirmation", async () => {
+    mockGetTipClaimByCode.mockResolvedValue({
+      ...claimRow,
+      status: "quoted",
+      tip_id: tipRow.id,
+    })
+    mockGetTipById.mockResolvedValue(tipRow)
+
+    const ctx = makeCtx({
+      command: "start",
+      argsText: "claim_claimcode123",
+      from: { id: 77777, username: "newuser", first_name: "New" },
+    })
+
+    await handler(ctx)
+
+    expect(ctx.reply).toHaveBeenCalledWith("This claim is already waiting for the sender to confirm.")
+    expect(mockClaimTipClaimForQuote).not.toHaveBeenCalled()
+    expect(mockCreateTipQuote).not.toHaveBeenCalled()
   })
 })
