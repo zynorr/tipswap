@@ -10,6 +10,8 @@ The bot is:
 
 TipSwap uses real TON mainnet transactions. Use small amounts first, such as `0.02 TON`.
 
+For token tips through STON.fi, keep extra TON for route gas and the safety buffer. If your wallet has less than about `0.30 TON`, test direct TON tips first.
+
 ## What You Need
 
 - Telegram installed.
@@ -75,7 +77,7 @@ Copy the wallet address shown by the bot.
 
 Send a small amount of TON to that address from another wallet or exchange.
 
-Recommended first test amount:
+Recommended first test amount for direct TON tips:
 
 ```text
 0.1 TON
@@ -118,7 +120,7 @@ If the recipient has not started `@tipswapperbot`, the sender gets a claim link 
 This tests the simple syntax:
 
 ```text
-/tip 1 USDT @recipientusername
+/tip 0.1 USDT @recipientusername
 ```
 
 This means:
@@ -133,7 +135,7 @@ Expected result:
 - Tap **Confirm**.
 - The recipient receives USDT if the route executes successfully.
 
-If this fails with a quote or liquidity message, try a smaller amount or test the direct TON tip first.
+If this fails with a quote, liquidity, or insufficient TON message, try a smaller amount such as `0.1 USDT`, or test the direct TON tip first. STON.fi token routes require extra TON gas even when the tip amount is small.
 
 ## 6. Test An Unregistered Recipient Claim Link
 
@@ -160,12 +162,12 @@ Claim links are for one unregistered recipient at a time. Multi-recipient tips s
 From the sender account, send:
 
 ```text
-/tip 1 USDT from TON @recipientusername
+/tip 0.1 USDT from TON @recipientusername
 ```
 
 Expected result:
 
-- Same behavior as `/tip 1 USDT @recipientusername`.
+- Same behavior as `/tip 0.1 USDT @recipientusername`.
 - The command confirms that the sender is paying from TON.
 
 ## 8. Test Multi-Recipient Tips
@@ -252,14 +254,16 @@ From the sender account:
 4. Tap **Save connected wallet** if it appears.
 5. Go to the send tab.
 6. Enter recipient, amount, receive token, and pay token.
-7. Tap **Quote**.
-8. Tap **Sign and send** and approve in your wallet.
+7. Tap **Review quote**.
+8. If the active wallet is managed, tap **Confirm and send from managed wallet**.
+9. If the active wallet is external, tap **Open wallet and sign** and approve in your wallet.
 
 Expected result:
 
 - Same-token sends, such as TON to TON or USDT to USDT, use TON Pay tracking.
 - Cross-token sends, such as TON to USDT, use a STON.fi swap transaction.
 - The recipient receives funds at their active TipSwap wallet address.
+- The progress panel shows quote, wallet approval, submit, and confirmation/tracking states.
 
 ## 11. Test Tip Preferences
 
@@ -346,8 +350,8 @@ Expected result:
 /wallet
 /balance
 /tip 0.02 TON @recipientusername
-/tip 1 USDT @recipientusername
-/tip 1 USDT from TON @recipientusername
+/tip 0.1 USDT @recipientusername
+/tip 0.1 USDT from TON @recipientusername
 /receive USDT
 /settip 0.02 TON from TON
 /settings

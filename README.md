@@ -11,16 +11,17 @@ TipSwap is a Telegram bot that lets anyone tip TON, USDT, or STON tokens to any 
 ```mermaid
 flowchart TB
     subgraph Users["👤 Users"]
-        TG["Telegram App<br/>/start /wallet /swap /balance /help"]
-        WB["Web Browser<br/>Landing page · Admin dashboard"]
+        TG["Telegram App<br/>/start /wallet /swap /tip /balance /help"]
+        WB["Web Browser<br/>Landing page · Admin dashboard · Mini App"]
     end
 
     subgraph App["⚡ Application — Next.js / Vercel"]
-        API["API Routes<br/>/api/bot · /api/bot/setup · /api/waitlist"]
+        API["API Routes<br/>/api/bot · /api/miniapp/* · /api/tonpay/webhook"]
         BOT["grammY Bot"]
         USERS["User & wallet queries"]
         TON_WALLET["TON client<br/>Balance · Broadcast"]
         SWAP["Swap engine<br/>STON.fi SDK · Quotes · Gas"]
+        TONPAY["TON Pay<br/>External wallet direct sends"]
         CRYPTO["Mnemonic encryption<br/>AES-256-GCM"]
         SUPALIB["Supabase clients<br/>admin · client · server"]
     end
@@ -37,9 +38,11 @@ flowchart TB
     BOT --> USERS
     BOT --> TON_WALLET
     BOT --> SWAP
+    API --> TONPAY
     USERS --> SUPALIB
     TON_WALLET --> SUPALIB
     SWAP --> SUPALIB
+    TONPAY --> SUPALIB
     SUPALIB --> SUPABASE
     TON_WALLET --> TON
     SWAP --> TON
@@ -52,7 +55,7 @@ flowchart TB
 2. The bot looks up the user's managed wallet in Supabase and decrypts the mnemonic
 3. It checks the TON balance to ensure there's enough for gas (0.2–0.35 TON depending on the route)
 4. It builds the swap transaction via STON.fi's CPIRouterV2_2 contract
-5. It quotes the expected output from the pool reserves (best-effort — if it fails, the swap still proceeds)
+5. It requests a live STON.fi simulation for routing, gas, and expected output
 6. It signs and broadcasts the transaction, then polls for confirmation (up to 60s)
 7. It logs the result in Supabase and sends the user a confirmation with a tonviewer link
 
@@ -61,10 +64,10 @@ flowchart TB
 - **Server-only bot code** — the grammY handlers use a `"server-only"` import and are never exposed to the browser
 - **Three Supabase clients** — service role for bot/API routes, anonymous for the landing page, authenticated for Next.js server components
 - **Stateless handlers** — every request fetches fresh state from Supabase and TON RPC; no in-memory session
-- **Best-effort quoting** — the on-chain price estimate is informative only; a quote failure never blocks a swap
+- **Live STON.fi simulation** — swaps and token tips require a fresh route simulation before funds move
 - **Exponential backoff** — TONCenter 429 responses trigger up to 5 retries with 2× delay starting at 600ms
 
-**Database:** Bot data lives in `tg_users`, `tg_wallets`, `tg_swaps`, `tg_tips`, `tg_tip_batches`, `tg_tip_claims`, and `tg_group_messages`; public waitlist signups live in `waitlist`. RLS is enabled. Only `waitlist` allows anonymous inserts — all bot data is service-role only. Wallet mnemonics are encrypted at rest with AES-256-GCM.
+**Database:** Bot data lives in `tg_users`, `tg_wallets`, `tg_swaps`, `tg_tips`, `tg_external_tip_payments`, `tg_tip_batches`, `tg_tip_claims`, and `tg_group_messages`; public waitlist signups live in `waitlist`. RLS is enabled. Only `waitlist` allows anonymous inserts — all bot data is service-role only. Wallet mnemonics are encrypted at rest with AES-256-GCM.
 
 ---
 
@@ -89,6 +92,8 @@ flowchart TB
 | `/start` | Register or restore your managed wallet |
 | `/wallet` | Show wallet address and TON balance |
 | `/balance` | Show TON, USDT, and STON balances |
+| `/connect <address>` | Track an external TON wallet and receive tips there |
+| `/managed` | Switch back to the system-generated managed wallet |
 | `/swap <amount> <from> <to>` | Execute a cross-token swap |
 | `/tip <amount> <receive-token> @user` | Tip a Telegram user from TON by default, or create a claim link if they have not started the bot |
 | `/tip <amount> <receive-token> from <pay-token> @user` | Tip with an explicit pay token |
@@ -108,14 +113,22 @@ flowchart TB
 app/
   page.tsx                Landing page
   admin/setup/            Webhook management UI
+  miniapp/                Telegram Mini App wallet, send, claim, history UI
   api/bot/route.ts        Telegram webhook receiver
   api/bot/setup/route.ts  Webhook setup/inspection API
+  api/miniapp/            Authenticated Mini App APIs
+  api/tonpay/webhook/     TON Pay webhook receiver
   api/waitlist/route.ts   Public waitlist signup
+  tonconnect-manifest.json/ TON Connect manifest route
 
 lib/
   bot/
     index.ts              grammY command handlers
-    users.ts              Supabase helpers for users, wallets, swaps
+    tips.ts               Shared tip, claim, and Mini App tip helpers
+    users.ts              Supabase helpers for users, wallets, swaps, tips
+  miniapp/
+    auth.ts               Telegram Mini App initData validation
+    external-tips.ts      TON Pay and STON.fi wallet-signed tip flow
   ston/swap.ts            STON.fi swap construction, quotes, gas estimation
   supabase/               Three clients + generated types
   wallet/
@@ -124,7 +137,8 @@ lib/
 
 components/site/          Landing page sections
 components/ui/            Shared Radix UI primitives
-scripts/                  001_init_schema.sql
+docs/                     Production and Telegram testing guides
+scripts/                  SQL setup and wallet recovery helpers
 ```
 
 ---
@@ -155,11 +169,15 @@ Then go to `/admin/setup`, paste your `ADMIN_SETUP_TOKEN`, and click **Set webho
 | Variable | Purpose |
 |---|---|
 | `TELEGRAM_BOT_TOKEN` | Bot token from [@BotFather](https://t.me/BotFather) |
+| `TELEGRAM_BOT_USERNAME` | Bot username without `@`, used in claim links |
+| `NEXT_PUBLIC_TELEGRAM_BOT_USERNAME` | Public bot username for Mini App fallback links |
 | `TELEGRAM_WEBHOOK_SECRET` | Secret token validated on webhook requests |
 | `ADMIN_SETUP_TOKEN` | Bearer token for webhook setup API (production) |
 | `WALLET_ENCRYPTION_KEY` | Symmetric key for mnemonic encryption (min 32 chars) |
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key |
+| `NEXT_PUBLIC_APP_URL` | Public HTTPS app URL for Mini App and TON Connect links |
+| `NEXT_ALLOWED_DEV_ORIGINS` | Optional comma-separated local tunnel origins for Next.js dev |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role key for bot/admin API routes |
 | `TON_API_KEY` | TONCenter API key for higher rate limits |
 | `TONPAY_CHAIN` | `mainnet` for production, `testnet` only for testnet wallets |

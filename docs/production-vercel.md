@@ -47,7 +47,8 @@ Set these in Vercel for Production:
 | `NEXT_ALLOWED_DEV_ORIGINS` | Leave unset in production |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role key |
 | `TELEGRAM_BOT_TOKEN` | Bot token from BotFather |
-| `TELEGRAM_BOT_USERNAME` | Bot username without `@`, e.g. `tipswapbot` |
+| `TELEGRAM_BOT_USERNAME` | Bot username without `@`, e.g. `tipswapperbot` |
+| `NEXT_PUBLIC_TELEGRAM_BOT_USERNAME` | Same bot username, exposed to the Mini App for fallback links |
 | `TELEGRAM_WEBHOOK_SECRET` | Random 32+ character secret |
 | `ADMIN_SETUP_TOKEN` | Random 32+ character admin token |
 | `WALLET_ENCRYPTION_KEY` | Random 32+ character encryption key |
@@ -59,6 +60,8 @@ Set these in Vercel for Production:
 Do not set a Postgres connection string as `NEXT_PUBLIC_SUPABASE_URL`.
 
 Do not rotate `WALLET_ENCRYPTION_KEY` after users create managed wallets. Existing wallet mnemonics depend on it.
+
+Mini App authentication uses the deployed `TELEGRAM_BOT_TOKEN` to verify Telegram `initData`. If the Mini App opens from `@tipswapperbot`, Vercel must use that exact bot's token. A token from an older bot will cause `Telegram initData hash is invalid`.
 
 Generate strong secrets locally:
 
@@ -109,6 +112,8 @@ In BotFather, set the Mini App / Web App URL to:
 ```text
 https://<your-vercel-domain>/miniapp
 ```
+
+Also set the bot profile image with BotFather `/setuserpic` using `public/telegram-bot-avatar.png` if it has not been uploaded yet.
 
 If you use the optional TON Pay Merchant Dashboard, set its webhook URL to:
 
@@ -172,7 +177,7 @@ If `@recipientusername` has not started the bot, the sender should receive a cla
 Test STON.fi route:
 
 ```text
-/tip 1 USDT @recipientusername
+/tip 0.1 USDT @recipientusername
 ```
 
 Test batch limit:
