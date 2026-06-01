@@ -133,6 +133,21 @@ export type TgExternalTipPayment = {
   updated_at: string
 }
 
+export type TgSwap = {
+  id: string
+  user_id: string
+  offer_token: string
+  ask_token: string
+  offer_amount: string
+  expected_out: string | null
+  slippage_bps: number
+  tx_hash: string | null
+  status: string
+  error: string | null
+  created_at: string
+  updated_at: string
+}
+
 /**
  * Find or create a Telegram user. If the user is new, also generates and stores
  * a managed TON wallet for them.
@@ -895,6 +910,18 @@ export async function getRecentTipsForUser(userId: string, limit = 8) {
   return data as unknown as TgTip[]
 }
 
+export async function getExternalTipPaymentsByTipIds(tipIds: string[]) {
+  if (!tipIds.length) return []
+  const supabase = adminClient()
+  const { data, error } = await supabase
+    .from("tg_external_tip_payments")
+    .select("*")
+    .in("tip_id", tipIds)
+
+  if (error) throw error
+  return data as unknown as TgExternalTipPayment[]
+}
+
 export async function getRecentSwapsForUser(userId: string, limit = 5) {
   const supabase = adminClient()
   const { data, error } = await supabase
@@ -905,5 +932,5 @@ export async function getRecentSwapsForUser(userId: string, limit = 5) {
     .limit(limit)
 
   if (error) throw error
-  return data
+  return data as unknown as TgSwap[]
 }

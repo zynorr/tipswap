@@ -44,6 +44,7 @@ Set these in Vercel for Production:
 | `NEXT_PUBLIC_SUPABASE_URL` | `https://<project-ref>.supabase.co` |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key |
 | `NEXT_PUBLIC_APP_URL` | Public Vercel URL, e.g. `https://tipswap.vercel.app` |
+| `NEXT_ALLOWED_DEV_ORIGINS` | Leave unset in production |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role key |
 | `TELEGRAM_BOT_TOKEN` | Bot token from BotFather |
 | `TELEGRAM_BOT_USERNAME` | Bot username without `@`, e.g. `tipswapbot` |

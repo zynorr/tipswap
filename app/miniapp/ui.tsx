@@ -9,13 +9,21 @@ import {
   useTonConnectUI,
 } from "@tonconnect/ui-react"
 import {
+  AlertCircle,
+  ArrowDownLeft,
+  ArrowUpRight,
   Check,
+  CheckCircle2,
+  Clock3,
   Clipboard,
+  ExternalLink,
   History,
   Loader2,
+  RefreshCw,
   Send,
   Settings,
   Wallet,
+  XCircle,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -149,15 +157,46 @@ type TonPayStatusResponse = {
   }
 }
 
+type ActivityItem = {
+  id: string
+  kind: "tip" | "swap" | "claim"
+  direction: "sent" | "received"
+  status: string
+  title: string
+  primaryAmount: string
+  secondaryAmount: string | null
+  route: string
+  source: string
+  recipientAddress: string | null
+  txHash: string | null
+  error: string | null
+  createdAt: string
+  updatedAt: string
+  expiresAt: string | null
+  externalPayment: {
+    id: string
+    provider: "tonpay" | "stonfi"
+    status: string
+    reference: string | null
+    txHash: string | null
+    traceId: string | null
+    error: string | null
+    updatedAt: string
+  } | null
+  miniAppLink?: string
+}
+
 type HistoryResponse = {
   ok: true
   tips: TipSummary[]
   claims: ClaimSummary[]
   swaps: Array<{ id: string; status: string; offer_token: string; ask_token: string; offer_amount: string }>
+  activity: ActivityItem[]
 }
 
 const TOKENS = ["TON", "USDT", "STON"] as const
 const BOT_USERNAME = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME ?? "tipswapperbot"
+const TONSCAN_URL = "https://tonscan.org"
 
 function getInitData() {
   if (typeof window === "undefined") return ""
@@ -222,17 +261,176 @@ function shortAddress(address: string) {
   return address.length > 16 ? `${address.slice(0, 8)}...${address.slice(-6)}` : address
 }
 
+function formatDateTime(value: string | null | undefined) {
+  if (!value) return ""
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value))
+}
+
+function statusTone(status: string) {
+  if (["sent", "success", "completed"].includes(status)) return "success"
+  if (["failed", "cancelled", "expired", "error"].includes(status)) return "danger"
+  if (["sending", "submitted", "pending", "quoted", "quoting"].includes(status)) return "pending"
+  return "neutral"
+}
+
+function StatusBadge({ status }: { status: string }) {
+  const tone = statusTone(status)
+  return (
+    <Badge
+      variant={tone === "danger" ? "destructive" : tone === "pending" ? "secondary" : "outline"}
+      className={cn(
+        "capitalize",
+        tone === "success" && "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+      )}
+    >
+      {tone === "success" && <CheckCircle2 className="size-3" />}
+      {tone === "danger" && <XCircle className="size-3" />}
+      {tone === "pending" && <Clock3 className="size-3" />}
+      {status}
+    </Badge>
+  )
+}
+
+function ActivityCard({ item }: { item: ActivityItem }) {
+  const txHash = item.externalPayment?.txHash ?? item.txHash
+  const explorerHref = txHash ? `${TONSCAN_URL}/tx/${encodeURIComponent(txHash)}` : null
+  return (
+    <article className="rounded-lg border bg-card p-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 gap-3">
+          <div
+            className={cn(
+              "mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-md",
+              item.direction === "received"
+                ? "bg-emerald-500/10 text-emerald-600"
+                : "bg-primary/10 text-primary",
+            )}
+          >
+            {item.direction === "received" ? <ArrowDownLeft className="size-4" /> : <ArrowUpRight className="size-4" />}
+          </div>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="text-sm font-semibold">{item.title}</h3>
+              <StatusBadge status={item.status} />
+            </div>
+            <p className="mt-1 text-sm">
+              <span className="font-medium">{item.primaryAmount}</span>
+              {item.secondaryAmount && <span className="text-muted-foreground"> · {item.secondaryAmount}</span>}
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">{item.route}</p>
+          </div>
+        </div>
+        <time className="shrink-0 text-xs text-muted-foreground">{formatDateTime(item.createdAt)}</time>
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+        <Badge variant="outline" className="capitalize">{item.kind}</Badge>
+        <Badge variant="outline" className="capitalize">{item.source}</Badge>
+        {item.externalPayment && (
+          <Badge variant="outline" className="uppercase">{item.externalPayment.provider}</Badge>
+        )}
+        {item.recipientAddress && <span className="font-mono">{shortAddress(item.recipientAddress)}</span>}
+      </div>
+      {item.error && (
+        <p className="mt-3 rounded-md border border-destructive/30 bg-destructive/10 p-2 text-xs text-destructive">
+          {item.error}
+        </p>
+      )}
+      <div className="mt-3 flex flex-wrap gap-2">
+        {explorerHref && (
+          <Button asChild variant="secondary" size="sm">
+            <a href={explorerHref} target="_blank" rel="noreferrer">
+              <ExternalLink className="size-3" />
+              Explorer
+            </a>
+          </Button>
+        )}
+        {item.miniAppLink && (
+          <Button asChild variant="secondary" size="sm">
+            <a href={item.miniAppLink} target="_blank" rel="noreferrer">
+              Claim link
+            </a>
+          </Button>
+        )}
+      </div>
+    </article>
+  )
+}
+
+type OperationStep = {
+  label: string
+  detail: string
+  state: "pending" | "active" | "done" | "error"
+}
+
+function OperationPanel({
+  title,
+  detail,
+  steps,
+  error,
+}: {
+  title: string
+  detail: string
+  steps: OperationStep[]
+  error?: string
+}) {
+  return (
+    <section className="rounded-lg border bg-card p-4">
+      <div className="flex items-start gap-3">
+        <div className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+          {error ? <AlertCircle className="size-4" /> : <Loader2 className="size-4 animate-spin" />}
+        </div>
+        <div className="min-w-0">
+          <h2 className="text-sm font-semibold">{title}</h2>
+          <p className="mt-1 text-sm text-muted-foreground">{detail}</p>
+        </div>
+      </div>
+      <div className="mt-4 space-y-2">
+        {steps.map((step) => (
+          <div key={step.label} className="flex gap-3 rounded-md border bg-background p-3">
+            <div
+              className={cn(
+                "mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border",
+                step.state === "done" && "border-emerald-500 bg-emerald-500 text-white",
+                step.state === "active" && "border-primary text-primary",
+                step.state === "error" && "border-destructive bg-destructive text-white",
+              )}
+            >
+              {step.state === "done" && <Check className="size-3" />}
+              {step.state === "active" && <Loader2 className="size-3 animate-spin" />}
+              {step.state === "error" && <XCircle className="size-3" />}
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-medium">{step.label}</p>
+              <p className="text-xs text-muted-foreground">{step.detail}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+      {error && <p className="mt-3 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">{error}</p>}
+    </section>
+  )
+}
+
 function MiniAppInner() {
   const [initData, setInitData] = useState("")
   const [claimCode, setClaimCode] = useState("")
-  const [booting, setBooting] = useState(false)
   const [tab, setTab] = useState<"wallet" | "send" | "claim" | "history" | "settings">("wallet")
   const [me, setMe] = useState<MeResponse | null>(null)
   const [balances, setBalances] = useState<BalancesResponse["balances"] | null>(null)
   const [history, setHistory] = useState<HistoryResponse | null>(null)
   const [message, setMessage] = useState("")
   const [error, setError] = useState("")
-  const [loading, setLoading] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
+  const [walletAction, setWalletAction] = useState<"connect" | "managed" | null>(null)
+  const [sendStage, setSendStage] = useState<
+    "idle" | "quoting" | "quote-ready" | "claim-ready" | "confirming" | "wallet" | "submitting" | "polling" | "success" | "failed"
+  >("idle")
+  const [sendDetail, setSendDetail] = useState("")
   const [manualAddress, setManualAddress] = useState("")
   const [sendForm, setSendForm] = useState({ recipient: "", amount: "", ask: "USDT", offer: "TON" })
   const [quote, setQuote] = useState<QuoteResponse | null>(null)
@@ -241,10 +439,11 @@ function MiniAppInner() {
   const [tonConnectUI] = useTonConnectUI()
 
   const authed = Boolean(initData)
+  const busy = refreshing || Boolean(walletAction) || !["idle", "quote-ready", "claim-ready", "success", "failed"].includes(sendStage)
 
   const refresh = useCallback(async () => {
     if (!initData) return
-    setLoading(true)
+    setRefreshing(true)
     setError("")
     try {
       const [nextMe, nextBalances, nextHistory] = await Promise.all([
@@ -258,7 +457,7 @@ function MiniAppInner() {
     } catch (err) {
       setError((err as Error).message)
     } finally {
-      setLoading(false)
+      setRefreshing(false)
     }
   }, [initData])
 
@@ -302,7 +501,7 @@ function MiniAppInner() {
 
   async function connectAddress(address: string) {
     if (!address) return
-    setLoading(true)
+    setWalletAction("connect")
     setError("")
     try {
       await api("/api/miniapp/wallet/connect", initData, {
@@ -315,12 +514,12 @@ function MiniAppInner() {
     } catch (err) {
       setError((err as Error).message)
     } finally {
-      setLoading(false)
+      setWalletAction(null)
     }
   }
 
   async function switchManaged() {
-    setLoading(true)
+    setWalletAction("managed")
     setError("")
     try {
       await api("/api/miniapp/wallet/managed", initData, { method: "POST", body: "{}" })
@@ -329,13 +528,14 @@ function MiniAppInner() {
     } catch (err) {
       setError((err as Error).message)
     } finally {
-      setLoading(false)
+      setWalletAction(null)
     }
   }
 
   async function prepareClaim() {
     if (!claimCode) return
-    setLoading(true)
+    setSendStage("confirming")
+    setSendDetail("Preparing this claim with your active receiving wallet.")
     setError("")
     try {
       const result = await api<{ ok: true; alreadyPrepared: boolean; claim: ClaimSummary; tip: TipSummary | null }>(
@@ -344,16 +544,22 @@ function MiniAppInner() {
         { method: "POST", body: "{}" },
       )
       setMessage(result.alreadyPrepared ? "Claim is already waiting for sender confirmation." : "Claim ready. Sender can confirm now.")
+      setSendStage("success")
+      setSendDetail(result.alreadyPrepared ? "The sender can confirm the existing quote." : "The sender can now confirm this tip.")
       await refresh()
     } catch (err) {
-      setError((err as Error).message)
+      const nextError = (err as Error).message
+      setError(nextError)
+      setSendStage("failed")
+      setSendDetail(nextError)
     } finally {
-      setLoading(false)
+      // Stage carries the result state.
     }
   }
 
   async function createQuote() {
-    setLoading(true)
+    setSendStage("quoting")
+    setSendDetail("Checking recipient, balances, route, gas, and slippage.")
     setError("")
     setQuote(null)
     try {
@@ -362,27 +568,48 @@ function MiniAppInner() {
         body: JSON.stringify({ ...sendForm, senderAddress: tonAddress }),
       })
       setQuote(result)
-      setMessage(result.type === "claim" ? "Recipient needs to claim first." : "Quote ready for confirmation.")
+      if (result.type === "claim") {
+        setSendStage("claim-ready")
+        setSendDetail(`@${result.claim.targetUsername} needs to open the claim link before funds move.`)
+        setMessage("Recipient needs to claim first.")
+      } else {
+        setSendStage("quote-ready")
+        setSendDetail(
+          result.type === "external"
+            ? "Review the quote, then sign the transaction in your wallet."
+            : "Review the quote, then confirm from your managed wallet.",
+        )
+        setMessage("Quote ready for confirmation.")
+      }
       await refresh()
     } catch (err) {
-      setError((err as Error).message)
+      const nextError = (err as Error).message
+      setError(nextError)
+      setSendStage("failed")
+      setSendDetail(nextError)
     } finally {
-      setLoading(false)
+      // Stage carries the result state.
     }
   }
 
   async function confirmTip(tipId: string) {
-    setLoading(true)
+    setSendStage("confirming")
+    setSendDetail("Submitting the managed wallet transaction and waiting for chain confirmation.")
     setError("")
     try {
       await api(`/api/miniapp/tips/${tipId}/confirm`, initData, { method: "POST", body: "{}" })
-      setMessage("Tip processed.")
+      setMessage("Tip sent.")
+      setSendStage("success")
+      setSendDetail("The tip was confirmed and history has been refreshed.")
       setQuote(null)
       await refresh()
     } catch (err) {
-      setError((err as Error).message)
+      const nextError = (err as Error).message
+      setError(nextError)
+      setSendStage("failed")
+      setSendDetail(nextError)
     } finally {
-      setLoading(false)
+      // Stage carries the result state.
     }
   }
 
@@ -400,19 +627,23 @@ function MiniAppInner() {
 
   async function confirmExternalTip(result: Extract<QuoteResponse, { type: "external" }>) {
     if (!tonAddress) {
+      setSendStage("wallet")
+      setSendDetail("Connect the wallet saved as your active external wallet, then return to sign.")
       modal.open()
       return
     }
-    setLoading(true)
+    setSendStage("wallet")
+    setSendDetail(result.provider === "tonpay" ? "Approve the TON Pay transfer in your wallet." : "Approve the STON.fi swap in your wallet.")
     setError("")
     try {
-      setMessage(result.provider === "tonpay" ? "Waiting for wallet signature..." : "Waiting for swap signature...")
       const txResult = await tonConnectUI.sendTransaction({
         messages: [result.message],
         validUntil: Math.floor(Date.now() / 1000) + 300,
         from: tonAddress,
       })
 
+      setSendStage("submitting")
+      setSendDetail("Wallet signed. Recording the transaction in TipSwap.")
       const submitted = await api<ExternalSubmitResponse>(
         `/api/miniapp/tips/${result.tip.id}/external-submit`,
         initData,
@@ -423,19 +654,34 @@ function MiniAppInner() {
       )
 
       if (result.provider === "tonpay" && submitted.payment.reference) {
-        setMessage("Payment submitted. Waiting for TON Pay confirmation...")
+        setSendStage("polling")
+        setSendDetail("Payment submitted. Waiting for TON Pay to index the transfer.")
         const status = await pollTonPay(submitted.payment.reference)
-        setMessage(status.transfer.status === "success" ? "Tip confirmed." : status.transfer.errorMessage ?? "Payment failed.")
+        if (status.transfer.status === "success") {
+          setMessage("Tip confirmed.")
+          setSendStage("success")
+          setSendDetail("The transfer is confirmed and history has been refreshed.")
+        } else {
+          const nextError = status.transfer.errorMessage ?? "Payment failed."
+          setMessage(nextError)
+          setSendStage("failed")
+          setSendDetail(nextError)
+        }
       } else {
         setMessage("Swap submitted. Tip is marked as sending while the transaction settles.")
+        setSendStage("success")
+        setSendDetail("The signed swap was submitted. History will show it as sending until reconciliation catches up.")
       }
 
       setQuote(null)
       await refresh()
     } catch (err) {
-      setError((err as Error).message)
+      const nextError = (err as Error).message
+      setError(nextError)
+      setSendStage("failed")
+      setSendDetail(nextError)
     } finally {
-      setLoading(false)
+      // Stage carries the result state.
     }
   }
 
@@ -444,11 +690,51 @@ function MiniAppInner() {
     return tonAddress !== me.wallet.address
   }, [tonAddress, me?.wallet.address])
 
+  const sendSteps = useMemo<OperationStep[]>(() => {
+    const external = quote?.type === "external"
+    const labels = external
+      ? [
+          ["Quote", "Recipient, route, gas, and amount checked."],
+          ["Wallet approval", "Approve the transaction in your connected wallet."],
+          ["Submit", "Record the signed transaction with TipSwap."],
+          [quote.provider === "tonpay" ? "Confirm" : "Track", quote.provider === "tonpay" ? "Wait for TON Pay confirmation." : "Watch history while the swap settles."],
+        ]
+      : [
+          ["Quote", "Recipient, route, gas, and amount checked."],
+          ["Submit", "Send from the managed wallet."],
+          ["Confirm", "Wait for blockchain confirmation."],
+        ]
+    const activeIndex =
+      sendStage === "quoting" ? 0 :
+      sendStage === "wallet" ? 1 :
+      sendStage === "submitting" ? (external ? 2 : 1) :
+      sendStage === "polling" ? (external ? 3 : 2) :
+      sendStage === "confirming" ? 1 :
+      sendStage === "success" ? labels.length :
+      sendStage === "failed" ? -1 :
+      sendStage === "quote-ready" || sendStage === "claim-ready" ? 0 :
+      -2
+
+    return labels.map(([label, detail], index) => ({
+      label,
+      detail,
+      state: sendStage === "failed" && index === Math.max(0, activeIndex)
+        ? "error"
+        : index < activeIndex || sendStage === "success"
+          ? "done"
+          : index === activeIndex
+            ? "active"
+            : "pending",
+    }))
+  }, [quote, sendStage])
+
+  const showSendProgress = sendStage !== "idle" && sendStage !== "quote-ready" && sendStage !== "claim-ready"
+
   if (!authed) {
     return (
       <main className="min-h-screen bg-background px-5 py-8 text-foreground">
         <section className="mx-auto max-w-md rounded-lg border bg-card p-5">
-          <h1 className="text-xl font-semibold">{booting ? "Opening TipSwap" : "Open in Telegram"}</h1>
+          <h1 className="text-xl font-semibold">Open in Telegram</h1>
           <p className="mt-2 text-sm text-muted-foreground">
             This Mini App needs Telegram authentication. Open it from @{BOT_USERNAME}.
           </p>
@@ -479,6 +765,19 @@ function MiniAppInner() {
           <div className={cn("rounded-md border px-3 py-2 text-sm", error ? "border-destructive text-destructive" : "border-primary/40 text-primary")}>
             {error || message}
           </div>
+        )}
+
+        {showSendProgress && (
+          <OperationPanel
+            title={
+              sendStage === "success" ? "Send complete" :
+              sendStage === "failed" ? "Action needs attention" :
+              "Sending in progress"
+            }
+            detail={sendDetail || "TipSwap is processing this request."}
+            steps={sendSteps}
+            error={sendStage === "failed" ? sendDetail || error : undefined}
+          />
         )}
 
         <nav className="grid grid-cols-5 rounded-lg border bg-card p-1">
@@ -526,7 +825,8 @@ function MiniAppInner() {
             <div className="mt-4 flex flex-col gap-2">
               <TonConnectButton />
               {connectedWalletDifferent && (
-                <Button onClick={() => connectAddress(tonAddress)} disabled={loading}>
+                <Button onClick={() => connectAddress(tonAddress)} disabled={busy}>
+                  {walletAction === "connect" && <Loader2 className="size-4 animate-spin" />}
                   Save connected wallet
                 </Button>
               )}
@@ -536,11 +836,12 @@ function MiniAppInner() {
                   onChange={(event) => setManualAddress(event.target.value)}
                   placeholder="Paste UQ... address"
                 />
-                <Button size="icon" onClick={() => connectAddress(manualAddress)} disabled={loading}>
-                  <Clipboard className="size-4" />
+                <Button size="icon" onClick={() => connectAddress(manualAddress)} disabled={busy}>
+                  {walletAction === "connect" ? <Loader2 className="size-4 animate-spin" /> : <Clipboard className="size-4" />}
                 </Button>
               </div>
-              <Button variant="secondary" onClick={switchManaged} disabled={loading}>
+              <Button variant="secondary" onClick={switchManaged} disabled={busy}>
+                {walletAction === "managed" && <Loader2 className="size-4 animate-spin" />}
                 Use managed wallet
               </Button>
             </div>
@@ -549,43 +850,90 @@ function MiniAppInner() {
 
         {tab === "send" && (
           <section className="rounded-lg border bg-card p-4">
-            <h2 className="text-lg font-semibold">Send a tip</h2>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold">Send a tip</h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {me?.wallet.mode === "external"
+                    ? "Your connected wallet signs the transaction."
+                    : "Your managed TipSwap wallet sends after confirmation."}
+                </p>
+              </div>
+              <Badge variant="outline">{me?.wallet.mode ?? "..."}</Badge>
+            </div>
             <div className="mt-3 flex flex-col gap-2">
               <Input placeholder="@alice" value={sendForm.recipient} onChange={(e) => setSendForm({ ...sendForm, recipient: e.target.value })} />
               <Input placeholder="5" value={sendForm.amount} onChange={(e) => setSendForm({ ...sendForm, amount: e.target.value })} />
               <div className="grid grid-cols-2 gap-2">
-                <select className="h-9 rounded-md border bg-background px-3 text-sm" value={sendForm.ask} onChange={(e) => setSendForm({ ...sendForm, ask: e.target.value })}>
-                  {TOKENS.map((token) => <option key={token}>{token}</option>)}
-                </select>
-                <select className="h-9 rounded-md border bg-background px-3 text-sm" value={sendForm.offer} onChange={(e) => setSendForm({ ...sendForm, offer: e.target.value })}>
-                  {TOKENS.map((token) => <option key={token}>{token}</option>)}
-                </select>
+                <label className="text-xs text-muted-foreground">
+                  Recipient gets
+                  <select className="mt-1 h-9 w-full rounded-md border bg-background px-3 text-sm text-foreground" value={sendForm.ask} onChange={(e) => setSendForm({ ...sendForm, ask: e.target.value })}>
+                    {TOKENS.map((token) => <option key={token}>{token}</option>)}
+                  </select>
+                </label>
+                <label className="text-xs text-muted-foreground">
+                  You pay with
+                  <select className="mt-1 h-9 w-full rounded-md border bg-background px-3 text-sm text-foreground" value={sendForm.offer} onChange={(e) => setSendForm({ ...sendForm, offer: e.target.value })}>
+                    {TOKENS.map((token) => <option key={token}>{token}</option>)}
+                  </select>
+                </label>
               </div>
-              <Button onClick={createQuote} disabled={loading}>
-                {loading ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
-                Quote
+              <Button onClick={createQuote} disabled={busy || !sendForm.recipient || !sendForm.amount}>
+                {sendStage === "quoting" ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
+                {sendStage === "quoting" ? "Building quote" : "Review quote"}
               </Button>
             </div>
             {quote?.type === "quote" && (
-              <div className="mt-4 rounded-md border p-3 text-sm">
-                <p>Recipient: @{quote.recipient.username}</p>
-                <p>They receive: {quote.tip.askAmount} {quote.tip.askToken}</p>
-                <p>You pay: {quote.quote.quotedOfferAmount} {quote.quote.offerSymbol}</p>
-                <Button className="mt-3 w-full" onClick={() => confirmTip(quote.tip.id)} disabled={loading}>
-                  Confirm and send
+              <div className="mt-4 rounded-lg border p-3 text-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-medium">Quote ready</p>
+                    <p className="text-muted-foreground">@{quote.recipient.username}</p>
+                  </div>
+                  <StatusBadge status={quote.tip.status} />
+                </div>
+                <dl className="mt-3 grid grid-cols-2 gap-2">
+                  <div className="rounded-md bg-secondary p-2">
+                    <dt className="text-xs text-muted-foreground">They receive</dt>
+                    <dd className="font-medium">{quote.tip.askAmount} {quote.tip.askToken}</dd>
+                  </div>
+                  <div className="rounded-md bg-secondary p-2">
+                    <dt className="text-xs text-muted-foreground">You pay</dt>
+                    <dd className="font-medium">{quote.quote.quotedOfferAmount} {quote.quote.offerSymbol}</dd>
+                  </div>
+                </dl>
+                <p className="mt-2 text-xs text-muted-foreground">Expires {formatDateTime(quote.tip.expiresAt)}</p>
+                <Button className="mt-3 w-full" onClick={() => confirmTip(quote.tip.id)} disabled={busy}>
+                  {sendStage === "confirming" && <Loader2 className="size-4 animate-spin" />}
+                  Confirm and send from managed wallet
                 </Button>
               </div>
             )}
             {quote?.type === "external" && (
-              <div className="mt-4 rounded-md border p-3 text-sm">
-                <p>Recipient: @{quote.recipient.username}</p>
-                <p>They receive: {quote.tip.askAmount} {quote.tip.askToken}</p>
-                <p>You pay: {quote.quote.quotedOfferAmount} {quote.quote.offerSymbol}</p>
-                <p className="mt-1 text-xs text-muted-foreground">
+              <div className="mt-4 rounded-lg border p-3 text-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-medium">Wallet signature required</p>
+                    <p className="text-muted-foreground">@{quote.recipient.username}</p>
+                  </div>
+                  <Badge variant="outline" className="uppercase">{quote.provider}</Badge>
+                </div>
+                <dl className="mt-3 grid grid-cols-2 gap-2">
+                  <div className="rounded-md bg-secondary p-2">
+                    <dt className="text-xs text-muted-foreground">They receive</dt>
+                    <dd className="font-medium">{quote.tip.askAmount} {quote.tip.askToken}</dd>
+                  </div>
+                  <div className="rounded-md bg-secondary p-2">
+                    <dt className="text-xs text-muted-foreground">You pay</dt>
+                    <dd className="font-medium">{quote.quote.quotedOfferAmount} {quote.quote.offerSymbol}</dd>
+                  </div>
+                </dl>
+                <p className="mt-2 text-xs text-muted-foreground">
                   {quote.provider === "tonpay" ? "Direct payment via TON Pay" : `Swap route: STON.fi ${quote.quote.routerVersion}`}
                 </p>
-                <Button className="mt-3 w-full" onClick={() => confirmExternalTip(quote)} disabled={loading}>
-                  Sign and send
+                <Button className="mt-3 w-full" onClick={() => confirmExternalTip(quote)} disabled={busy}>
+                  {["wallet", "submitting", "polling"].includes(sendStage) && <Loader2 className="size-4 animate-spin" />}
+                  {tonAddress ? "Open wallet and sign" : "Connect wallet to sign"}
                 </Button>
               </div>
             )}
@@ -603,35 +951,27 @@ function MiniAppInner() {
             <h2 className="text-lg font-semibold">Claim tip</h2>
             <p className="mt-1 text-sm text-muted-foreground">Connect or choose your receiving wallet, then prepare the claim.</p>
             <Input className="mt-3" placeholder="claim code" value={claimCode} onChange={(e) => setClaimCode(e.target.value)} />
-            <Button className="mt-3 w-full" onClick={prepareClaim} disabled={loading || !claimCode}>
-              Prepare claim
+            <Button className="mt-3 w-full" onClick={prepareClaim} disabled={busy || !claimCode}>
+              {sendStage === "confirming" && <Loader2 className="size-4 animate-spin" />}
+              Prepare claim for sender
             </Button>
           </section>
         )}
 
         {tab === "history" && (
           <section className="rounded-lg border bg-card p-4">
-            <h2 className="text-lg font-semibold">History</h2>
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold">Activity</h2>
+                <p className="text-sm text-muted-foreground">Tips, swaps, claims, and wallet-signed payments.</p>
+              </div>
+              <Button variant="secondary" size="icon" onClick={refresh} disabled={refreshing}>
+                <RefreshCw className={cn("size-4", refreshing && "animate-spin")} />
+              </Button>
+            </div>
             <div className="mt-3 flex flex-col gap-2">
-              {history?.tips?.map((tip) => (
-                <div key={tip.id} className="rounded-md border p-3 text-sm">
-                  <div className="flex justify-between gap-2">
-                    <span>{tip.askAmount} {tip.askToken}</span>
-                    <Badge variant="secondary">{tip.status}</Badge>
-                  </div>
-                  <p className="mt-1 text-xs text-muted-foreground">{shortAddress(tip.recipientAddress)}</p>
-                </div>
-              ))}
-              {history?.claims?.map((claim) => (
-                <div key={claim.code} className="rounded-md border p-3 text-sm">
-                  <div className="flex justify-between gap-2">
-                    <span>@{claim.targetUsername}</span>
-                    <Badge variant="outline">{claim.status}</Badge>
-                  </div>
-                  <p className="mt-1 text-xs text-muted-foreground">{claim.askAmount} {claim.askToken}</p>
-                </div>
-              ))}
-              {!history?.tips?.length && !history?.claims?.length && <p className="text-sm text-muted-foreground">No activity yet.</p>}
+              {history?.activity?.map((item) => <ActivityCard key={item.id} item={item} />)}
+              {!history?.activity?.length && <p className="text-sm text-muted-foreground">No activity yet.</p>}
             </div>
           </section>
         )}
@@ -641,8 +981,11 @@ function MiniAppInner() {
             <h2 className="text-lg font-semibold">Settings</h2>
             <div className="mt-3 space-y-2 text-sm">
               <p>Receive token: <b>{me?.user.default_recv_token ?? "USDT"}</b></p>
-              <p>Managed wallet sends bot-signed swaps and tips. External wallets receive tips.</p>
-              <Button variant="secondary" onClick={refresh} disabled={loading}>Refresh</Button>
+              <p>Managed wallet sends bot-signed swaps and tips. External wallets can send from the Mini App with wallet signatures.</p>
+              <Button variant="secondary" onClick={refresh} disabled={refreshing}>
+                {refreshing && <Loader2 className="size-4 animate-spin" />}
+                Refresh
+              </Button>
             </div>
           </section>
         )}
