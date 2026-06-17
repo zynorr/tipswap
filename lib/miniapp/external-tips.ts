@@ -24,7 +24,13 @@ import {
   type TgUser,
   type TgWallet,
 } from "@/lib/bot/users"
-import { claimSummary, createPendingTipClaim, normalizeUsername, tipSummary } from "@/lib/bot/tips"
+import {
+  claimSummary,
+  createPendingTipClaim,
+  normalizeUsername,
+  resolveReceiveTokenForRecipient,
+  tipSummary,
+} from "@/lib/bot/tips"
 import {
   buildExternalTipSwapTransaction,
   formatTokenAmount,
@@ -111,7 +117,6 @@ export async function prepareExternalTipPayment(params: {
   }
 
   const offer = resolveToken(params.offer)
-  const ask = resolveToken(params.ask)
   const username = normalizeUsername(params.recipientUsername)
   if (!/^[a-z0-9_]{5,32}$/.test(username)) {
     throw new Error("Recipient username is invalid")
@@ -122,6 +127,7 @@ export async function prepareExternalTipPayment(params: {
 
   const recipientUser = await findUserByUsername(username)
   if (!recipientUser) {
+    const ask = resolveReceiveTokenForRecipient(params.ask)
     const claim = await createPendingTipClaim({
       sender: params.sender,
       targetUsername: username,
@@ -135,6 +141,7 @@ export async function prepareExternalTipPayment(params: {
     throw new Error("You cannot tip yourself.")
   }
 
+  const ask = resolveReceiveTokenForRecipient(params.ask, recipientUser)
   const recipientWallet = await getActiveWallet(recipientUser.id)
   const recipientAddress = assertAddress(recipientWallet.address)
 

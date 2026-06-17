@@ -1,6 +1,7 @@
 import { miniAppError, requireMiniAppSession } from "@/lib/miniapp/auth"
 import {
   claimSummary,
+  isAutoReceiveToken,
   prepareSingleRecipientTip,
   tipSummary,
 } from "@/lib/bot/tips"
@@ -16,6 +17,7 @@ export async function POST(req: Request) {
   try {
     const { user, wallet, initData } = await requireMiniAppSession(req)
     const body = await req.json().catch(() => ({}))
+    const requestedAsk = String(body.ask ?? "AUTO")
     if (wallet.mode === "external") {
       const result = await prepareExternalTipPayment({
         sender: user,
@@ -24,7 +26,7 @@ export async function POST(req: Request) {
         senderAddress: String(body.senderAddress ?? ""),
         recipientUsername: String(body.recipient ?? ""),
         amount: String(body.amount ?? ""),
-        ask: String(body.ask ?? "USDT"),
+        ask: requestedAsk,
         offer: String(body.offer ?? "TON"),
       })
 
@@ -42,6 +44,8 @@ export async function POST(req: Request) {
         recipient: {
           username: result.recipient.username,
           address: result.recipient.wallet.address,
+          receiveToken: result.quote.askSymbol,
+          usedPreference: isAutoReceiveToken(requestedAsk),
         },
         quote: result.quote,
       })
@@ -53,7 +57,7 @@ export async function POST(req: Request) {
       senderTelegramUsername: initData.user.username ?? user.tg_username,
       recipientUsername: String(body.recipient ?? ""),
       amount: String(body.amount ?? ""),
-      ask: String(body.ask ?? "USDT"),
+      ask: requestedAsk,
       offer: String(body.offer ?? "TON"),
     })
 
@@ -68,6 +72,8 @@ export async function POST(req: Request) {
       recipient: {
         username: result.recipient.username,
         address: result.recipient.wallet.address,
+        receiveToken: result.quote.askSymbol,
+        usedPreference: isAutoReceiveToken(requestedAsk),
       },
       quote: {
         offerSymbol: result.quote.offerSymbol,

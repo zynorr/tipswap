@@ -41,6 +41,18 @@ export function normalizeUsername(username: string | null | undefined) {
   return username?.replace(/^@/, "").trim().toLowerCase() ?? ""
 }
 
+export function isAutoReceiveToken(token: string | null | undefined) {
+  const normalized = token?.trim().toUpperCase()
+  return !normalized || normalized === "AUTO" || normalized === "PREFERENCE"
+}
+
+export function resolveReceiveTokenForRecipient(
+  token: string | null | undefined,
+  recipient?: Pick<TgUser, "default_recv_token"> | null,
+) {
+  return resolveToken(isAutoReceiveToken(token) ? recipient?.default_recv_token ?? "USDT" : token!)
+}
+
 export function isExpired(expiring: { expires_at: string }) {
   return new Date(expiring.expires_at).getTime() <= Date.now()
 }
@@ -155,7 +167,6 @@ export async function prepareSingleRecipientTip(params: {
   }
 
   const offerToken = resolveToken(params.offer)
-  const askToken = resolveToken(params.ask)
   const username = normalizeUsername(params.recipientUsername)
   if (!/^[a-z0-9_]{5,32}$/.test(username)) {
     throw new Error("Recipient username is invalid")
@@ -166,6 +177,7 @@ export async function prepareSingleRecipientTip(params: {
 
   const recipientUser = await findUserByUsername(username)
   if (!recipientUser) {
+    const askToken = resolveReceiveTokenForRecipient(params.ask)
     const claim = await createPendingTipClaim({
       sender: params.sender,
       targetUsername: username,
@@ -179,6 +191,7 @@ export async function prepareSingleRecipientTip(params: {
     throw new Error("You cannot tip yourself.")
   }
 
+  const askToken = resolveReceiveTokenForRecipient(params.ask, recipientUser)
   const recipientWallet = await getActiveWallet(recipientUser.id)
   const stored = await quoteAndStoreSingleTip({
     sender: params.sender,
@@ -332,4 +345,3 @@ export function claimSummary(claim: TgTipClaim) {
     error: claim.error,
   }
 }
-

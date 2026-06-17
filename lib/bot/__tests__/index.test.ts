@@ -250,6 +250,7 @@ function getRegisteredReactionHandlers(): Array<{
 // ─── Import after mocks are set up ────────────────────────────────
 
 import { getBot } from "@/lib/bot/index"
+import { isAutoReceiveToken, resolveReceiveTokenForRecipient } from "@/lib/bot/tips"
 
 // ─── Helpers ──────────────────────────────────────────────────────
 
@@ -833,6 +834,16 @@ describe("/tip — quote flow", () => {
         askAmount: "5",
       }),
     )
+  })
+
+  it("resolves automatic receive tokens to the recipient preference", () => {
+    expect(isAutoReceiveToken("AUTO")).toBe(true)
+    expect(isAutoReceiveToken("PREFERENCE")).toBe(true)
+    expect(isAutoReceiveToken("USDT")).toBe(false)
+
+    expect(resolveReceiveTokenForRecipient("AUTO", { default_recv_token: "STON" }).symbol).toBe("STON")
+    expect(resolveReceiveTokenForRecipient("PREFERENCE", { default_recv_token: "TON" }).symbol).toBe("TON")
+    expect(resolveReceiveTokenForRecipient("USDT", { default_recv_token: "STON" }).symbol).toBe("USDT")
   })
 
   it("creates a batch quote for multiple recipients", async () => {

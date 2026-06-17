@@ -93,7 +93,7 @@ type QuoteResponse =
       ok: true
       type: "quote"
       tip: TipSummary
-      recipient: { username: string; address: string }
+      recipient: { username: string; address: string; receiveToken: string; usedPreference: boolean }
       quote: {
         offerSymbol: string
         askSymbol: string
@@ -118,7 +118,7 @@ type QuoteResponse =
         error: string | null
       }
       message: { address: string; amount: string; payload?: string }
-      recipient: { username: string; address: string }
+      recipient: { username: string; address: string; receiveToken: string; usedPreference: boolean }
       quote: {
         offerSymbol: string
         askSymbol: string
@@ -195,6 +195,7 @@ type HistoryResponse = {
 }
 
 const TOKENS = ["TON", "USDT", "STON"] as const
+const RECEIVE_OPTIONS = ["AUTO", ...TOKENS] as const
 const BOT_USERNAME = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME ?? "tipswapperbot"
 const TONSCAN_URL = "https://tonscan.org"
 
@@ -432,7 +433,7 @@ function MiniAppInner() {
   >("idle")
   const [sendDetail, setSendDetail] = useState("")
   const [manualAddress, setManualAddress] = useState("")
-  const [sendForm, setSendForm] = useState({ recipient: "", amount: "", ask: "USDT", offer: "TON" })
+  const [sendForm, setSendForm] = useState({ recipient: "", amount: "", ask: "AUTO", offer: "TON" })
   const [quote, setQuote] = useState<QuoteResponse | null>(null)
   const tonAddress = useTonAddress(true)
   const modal = useTonConnectModal()
@@ -560,6 +561,7 @@ function MiniAppInner() {
   async function createQuote() {
     setSendStage("quoting")
     setSendDetail("Checking recipient, balances, route, gas, and slippage.")
+    setMessage("")
     setError("")
     setQuote(null)
     try {
@@ -868,7 +870,11 @@ function MiniAppInner() {
                 <label className="text-xs text-muted-foreground">
                   Recipient gets
                   <select className="mt-1 h-9 w-full rounded-md border bg-background px-3 text-sm text-foreground" value={sendForm.ask} onChange={(e) => setSendForm({ ...sendForm, ask: e.target.value })}>
-                    {TOKENS.map((token) => <option key={token}>{token}</option>)}
+                    {RECEIVE_OPTIONS.map((token) => (
+                      <option key={token} value={token}>
+                        {token === "AUTO" ? "Recipient preference" : token}
+                      </option>
+                    ))}
                   </select>
                 </label>
                 <label className="text-xs text-muted-foreground">
@@ -882,13 +888,43 @@ function MiniAppInner() {
                 {sendStage === "quoting" ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
                 {sendStage === "quoting" ? "Building quote" : "Review quote"}
               </Button>
+              <p className="text-xs text-muted-foreground">
+                By default, the recipient&apos;s saved /receive token decides what they get.
+              </p>
             </div>
+            {["quoting", "failed"].includes(sendStage) && (
+              <div
+                className={cn(
+                  "mt-4 rounded-md border p-3 text-sm",
+                  sendStage === "failed"
+                    ? "border-destructive/30 bg-destructive/10 text-destructive"
+                    : "bg-secondary text-secondary-foreground",
+                )}
+              >
+                <div className="flex items-start gap-2">
+                  {sendStage === "failed" ? (
+                    <AlertCircle className="mt-0.5 size-4 shrink-0" />
+                  ) : (
+                    <Loader2 className="mt-0.5 size-4 shrink-0 animate-spin" />
+                  )}
+                  <div>
+                    <p className="font-medium">{sendStage === "failed" ? "Could not build quote" : "Building quote"}</p>
+                    <p className={cn("mt-1 text-xs", sendStage === "failed" ? "text-destructive" : "text-muted-foreground")}>
+                      {sendStage === "failed" ? sendDetail || error : sendDetail || "Checking recipient, route, and balances."}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
             {quote?.type === "quote" && (
               <div className="mt-4 rounded-lg border p-3 text-sm">
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="font-medium">Quote ready</p>
-                    <p className="text-muted-foreground">@{quote.recipient.username}</p>
+                    <p className="text-muted-foreground">
+                      @{quote.recipient.username} receives {quote.recipient.receiveToken}
+                      {quote.recipient.usedPreference ? " by preference" : ""}
+                    </p>
                   </div>
                   <StatusBadge status={quote.tip.status} />
                 </div>
@@ -914,7 +950,10 @@ function MiniAppInner() {
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="font-medium">Wallet signature required</p>
-                    <p className="text-muted-foreground">@{quote.recipient.username}</p>
+                    <p className="text-muted-foreground">
+                      @{quote.recipient.username} receives {quote.recipient.receiveToken}
+                      {quote.recipient.usedPreference ? " by preference" : ""}
+                    </p>
                   </div>
                   <Badge variant="outline" className="uppercase">{quote.provider}</Badge>
                 </div>
