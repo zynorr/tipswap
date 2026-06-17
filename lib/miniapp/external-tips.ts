@@ -52,8 +52,16 @@ function tonPayOptions() {
   }
 }
 
-function assertAddress(address: string) {
-  return Address.parse(address).toString({ bounceable: false, testOnly: false })
+function assertAddress(address: string, label = "Wallet address") {
+  if (!address.trim()) {
+    throw new Error(`${label} is required.`)
+  }
+
+  try {
+    return Address.parse(address).toString({ bounceable: false, testOnly: false })
+  } catch {
+    throw new Error(`${label} is not a valid TON address.`)
+  }
 }
 
 function tonPayAsset(symbol: string, mainnetAddress: string) {
@@ -110,8 +118,8 @@ export async function prepareExternalTipPayment(params: {
   if (params.senderWallet.mode !== "external") {
     throw new Error("External payment mode requires an external active wallet.")
   }
-  const senderAddress = assertAddress(params.senderAddress)
-  const activeAddress = assertAddress(params.senderWallet.address)
+  const senderAddress = assertAddress(params.senderAddress, "Connected wallet address")
+  const activeAddress = assertAddress(params.senderWallet.address, "Active TipSwap wallet address")
   if (senderAddress !== activeAddress) {
     throw new Error("Connected TON wallet does not match your active TipSwap external wallet.")
   }
@@ -143,7 +151,7 @@ export async function prepareExternalTipPayment(params: {
 
   const ask = resolveReceiveTokenForRecipient(params.ask, recipientUser)
   const recipientWallet = await getActiveWallet(recipientUser.id)
-  const recipientAddress = assertAddress(recipientWallet.address)
+  const recipientAddress = assertAddress(recipientWallet.address, "Recipient wallet address")
 
   if (offer.symbol === ask.symbol) {
     const raw = toRawAmount(params.amount, ask.decimals)

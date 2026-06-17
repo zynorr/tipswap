@@ -559,6 +559,17 @@ function MiniAppInner() {
   }
 
   async function createQuote() {
+    if (me?.wallet.mode === "external" && !tonAddress) {
+      const nextError = "Connect your saved external wallet before reviewing this quote."
+      setSendStage("failed")
+      setSendDetail(nextError)
+      setMessage("")
+      setError(nextError)
+      setQuote(null)
+      modal.open()
+      return
+    }
+
     setSendStage("quoting")
     setSendDetail("Checking recipient, balances, route, gas, and slippage.")
     setMessage("")
@@ -886,7 +897,7 @@ function MiniAppInner() {
               </div>
               <Button onClick={createQuote} disabled={busy || !sendForm.recipient || !sendForm.amount}>
                 {sendStage === "quoting" ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
-                {sendStage === "quoting" ? "Building quote" : "Review quote"}
+                {sendStage === "quoting" ? "Building quote" : me?.wallet.mode === "external" && !tonAddress ? "Connect wallet to review" : "Review quote"}
               </Button>
               <p className="text-xs text-muted-foreground">
                 By default, the recipient&apos;s saved /receive token decides what they get.
