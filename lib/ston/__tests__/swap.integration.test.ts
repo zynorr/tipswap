@@ -9,6 +9,7 @@ vi.mock("@/lib/wallet/ton", () => ({
   getTonClient: vi.fn(),
   getNetwork: vi.fn(() => "mainnet"),
   getNetworkDisplay: vi.fn(() => "TON Mainnet"),
+  sendJettonTransfer: vi.fn(),
   sendInternalMessage: vi.fn(),
   sendTonTransfer: vi.fn(),
 }))
@@ -178,6 +179,10 @@ beforeEach(() => {
   ;(ton.sendTonTransfer as ReturnType<typeof vi.fn>).mockResolvedValue({
     sent: true,
     seqno: 43,
+  })
+  ;(ton.sendJettonTransfer as ReturnType<typeof vi.fn>).mockResolvedValue({
+    sent: true,
+    seqno: 44,
   })
 })
 
@@ -481,6 +486,21 @@ describe("tip swap — reverse quote and direct recipient execution", () => {
     expect(quote.routerVersion).toBe("direct")
   })
 
+  it("quotes same-token jetton tips as direct transfers without STON.fi", async () => {
+    const quote = await quoteTipSwap({
+      offer: "USDT",
+      ask: "USDT",
+      askAmount: "0.25",
+    })
+
+    expect(mockSimulateReverseSwap).not.toHaveBeenCalled()
+    expect(quote.offerSymbol).toBe("USDT")
+    expect(quote.askSymbol).toBe("USDT")
+    expect(quote.quotedOfferAmount).toBe("0.2500")
+    expect(quote.expectedOut).toBe("0.2500")
+    expect(quote.routerVersion).toBe("direct")
+  })
+
   it("executes same-token TON tips as direct wallet transfers", async () => {
     const result = await executeTipSwap({
       ...validTipParams,
@@ -496,6 +516,27 @@ describe("tip swap — reverse quote and direct recipient execution", () => {
     })
     expect(mockGetSwapTonToJettonTxParams).not.toHaveBeenCalled()
     expect(result.expectedOut).toBe("0.1000")
+  })
+
+  it("executes same-token jetton tips as direct jetton transfers", async () => {
+    const result = await executeTipSwap({
+      ...validTipParams,
+      offer: "USDT",
+      ask: "USDT",
+      askAmount: "0.25",
+    })
+
+    expect(ton.sendJettonTransfer).toHaveBeenCalledWith({
+      mnemonic: validTipParams.mnemonic,
+      senderAddress: validTipParams.senderAddress,
+      jettonMinterAddress: "EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs",
+      tokenSymbol: "USDT",
+      tokenDecimals: 6,
+      to: validTipParams.recipientAddress,
+      amount: 250_000n,
+    })
+    expect(mockGetSwapJettonToJettonTxParams).not.toHaveBeenCalled()
+    expect(result.expectedOut).toBe("0.2500")
   })
 
   it("passes receiverAddress to the v2 router for direct delivery", async () => {

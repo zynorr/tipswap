@@ -14,7 +14,7 @@
 import "server-only"
 import { mnemonicNew, mnemonicToWalletKey } from "@ton/crypto"
 import { WalletContractV4, TonClient, internal, SendMode } from "@ton/ton"
-import { Address, beginCell, external, storeMessage, type Cell } from "@ton/core"
+import { Address, beginCell, external, storeMessage, toNano, type Cell } from "@ton/core"
 
 const ENDPOINTS = {
   mainnet: "https://toncenter.com/api/v2/jsonRPC",
@@ -161,6 +161,22 @@ export async function getJettonBalance(userAddress: string, jettonMinterAddress:
   }
 }
 
+export async function getJettonWalletAddress(userAddress: string, jettonMinterAddress: string) {
+  const client = getTonClient()
+  try {
+    const walletAddrResult = await withRateLimitRetry(() =>
+      client.runMethod(
+        Address.parse(jettonMinterAddress),
+        "get_wallet_address",
+        [{ type: "slice", cell: beginCell().storeAddress(Address.parse(userAddress)).endCell() }],
+      ),
+    )
+    return walletAddrResult.stack.readAddress()
+  } catch (err) {
+    throw mapTonRpcError(err, "jetton wallet address fetch")
+  }
+}
+
 /**
  * Send an arbitrary message body (e.g. a STON.fi swap message) to a target contract.
  * Returns the hash of the external message we broadcast.
@@ -245,8 +261,68 @@ export async function sendTonTransfer(params: {
   })
 }
 
+export async function sendJettonTransfer(params: {
+  mnemonic: string
+  senderAddress: string
+  jettonMinterAddress: string
+  tokenSymbol?: string
+  tokenDecimals?: number
+  to: string
+  amount: bigint
+}) {
+  const transferTon = toNano("0.08")
+  const buffer = toNano("0.05")
+  const [tonBalance, jettonBalance, jettonWalletAddress] = await Promise.all([
+    getBalance(params.senderAddress),
+    getJettonBalance(params.senderAddress, params.jettonMinterAddress),
+    getJettonWalletAddress(params.senderAddress, params.jettonMinterAddress),
+  ])
+
+  if (tonBalance < transferTon + buffer) {
+    throw new Error(
+      `Insufficient TON balance. Need ${fromNanoLike(transferTon + buffer)} TON for jetton transfer gas, wallet has ${fromNanoLike(tonBalance)} TON.`,
+    )
+  }
+  if (jettonBalance < params.amount) {
+    const symbol = params.tokenSymbol ?? "token"
+    const balance = params.tokenDecimals == null
+      ? jettonBalance.toString()
+      : formatUnits(jettonBalance, params.tokenDecimals)
+    const needed = params.tokenDecimals == null
+      ? params.amount.toString()
+      : formatUnits(params.amount, params.tokenDecimals)
+    throw new Error(`Insufficient ${symbol} balance. Need ${needed} ${symbol}, wallet has ${balance} ${symbol}.`)
+  }
+
+  const body = beginCell()
+    .storeUint(0xf8a7ea5, 32)
+    .storeUint(0, 64)
+    .storeCoins(params.amount)
+    .storeAddress(Address.parse(params.to))
+    .storeAddress(Address.parse(params.senderAddress))
+    .storeBit(0)
+    .storeCoins(1n)
+    .storeBit(0)
+    .endCell()
+
+  return await sendInternalMessage({
+    mnemonic: params.mnemonic,
+    to: jettonWalletAddress,
+    value: transferTon,
+    body,
+    bounce: true,
+  })
+}
+
 function fromNanoLike(amountNano: bigint) {
   const whole = amountNano / 1_000_000_000n
   const frac = (amountNano % 1_000_000_000n).toString().padStart(9, "0").slice(0, 4)
   return `${whole}.${frac}`
+}
+
+function formatUnits(amount: bigint, decimals: number) {
+  const divisor = 10n ** BigInt(decimals)
+  const whole = amount / divisor
+  const frac = (amount % divisor).toString().padStart(decimals, "0").replace(/0+$/, "")
+  return `${whole}${frac ? `.${frac}` : ""}`
 }

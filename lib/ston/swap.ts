@@ -21,6 +21,7 @@ import {
   getJettonBalance,
   getNetwork,
   getTonClient,
+  sendJettonTransfer,
   sendInternalMessage,
   sendTonTransfer,
 } from "@/lib/wallet/ton"
@@ -469,16 +470,11 @@ export async function quoteTipSwap(params: TipQuoteParams) {
   const askToken = resolveToken(params.ask)
   const slippageBps = params.slippageBps ?? 100
   if (offerToken.symbol === askToken.symbol) {
-    if (offerToken.symbol !== "TON") {
-      throw new SwapUserError(
-        "Same-token jetton tips are not supported yet. Use TON or choose a different pay token.",
-      )
-    }
     const raw = parsePositiveAmount(params.askAmount, askToken.decimals, "Tip")
     const amount = formatTokenAmount(raw, askToken.decimals)
     return {
-      offerSymbol: "TON",
-      askSymbol: "TON",
+      offerSymbol: offerToken.symbol,
+      askSymbol: askToken.symbol,
       askAmount: params.askAmount,
       askRaw: raw.toString(),
       quotedOfferAmount: amount,
@@ -519,18 +515,23 @@ export async function executeTipSwap(params: TipSwapParams) {
   const offerToken = resolveToken(params.offer)
   const askToken = resolveToken(params.ask)
   if (offerToken.symbol === askToken.symbol) {
-    if (offerToken.symbol !== "TON") {
-      throw new SwapUserError(
-        "Same-token jetton tips are not supported yet. Use TON or choose a different pay token.",
-      )
-    }
     const raw = parsePositiveAmount(params.askAmount, askToken.decimals, "Tip")
     const amount = formatTokenAmount(raw, askToken.decimals)
-    const result = await sendTonTransfer({
-      mnemonic: params.mnemonic,
-      to: params.recipientAddress,
-      amount: raw,
-    })
+    const result = offerToken.symbol === "TON"
+      ? await sendTonTransfer({
+        mnemonic: params.mnemonic,
+        to: params.recipientAddress,
+        amount: raw,
+      })
+      : await sendJettonTransfer({
+        mnemonic: params.mnemonic,
+        senderAddress: params.senderAddress,
+        jettonMinterAddress: offerToken.mainnet,
+        tokenSymbol: offerToken.symbol,
+        tokenDecimals: offerToken.decimals,
+        to: params.recipientAddress,
+        amount: raw,
+      })
     return {
       ...result,
       offerAmount: amount,

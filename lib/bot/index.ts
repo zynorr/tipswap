@@ -293,7 +293,7 @@ function tipConfirmText(params: {
     recipientText,
     `Each receives: ≈ <b>${params.amount} ${params.askSymbol}</b>`,
     `You pay total: ≈ <b>${params.totalOffer} ${params.offerSymbol}</b>`,
-    `Route: ${params.routerVersion === "direct" ? "direct TON transfer" : `STON.fi ${params.routerVersion}`}`,
+    `Route: ${params.routerVersion === "direct" ? "direct transfer" : `STON.fi ${params.routerVersion}`}`,
     sourceLine,
     "",
     "Expires in 5 minutes.",
