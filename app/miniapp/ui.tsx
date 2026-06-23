@@ -36,7 +36,7 @@ declare global {
     Telegram?: {
       WebApp?: {
         initData: string
-        initDataUnsafe?: { start_param?: string }
+        initDataUnsafe?: { start_param?: string; startParam?: string }
         ready: () => void
         expand: () => void
         close: () => void
@@ -219,14 +219,17 @@ function getInitData() {
   return ""
 }
 
-function getClaimCodeFromUrl() {
+function getClaimCodeFromUrl(initData = "") {
   if (typeof window === "undefined") return ""
   const url = new URL(window.location.href)
   const directClaim = url.searchParams.get("claim")
   const normalizedDirectClaim = normalizeClaimInput(directClaim)
   if (normalizedDirectClaim) return normalizedDirectClaim
-  const bridgeClaim = normalizeClaimInput(window.Telegram?.WebApp?.initDataUnsafe?.start_param)
+  const unsafe = window.Telegram?.WebApp?.initDataUnsafe
+  const bridgeClaim = normalizeClaimInput(unsafe?.start_param ?? unsafe?.startParam)
   if (bridgeClaim) return bridgeClaim
+  const initClaim = normalizeClaimInput(new URLSearchParams(initData || getInitData()).get("start_param"))
+  if (initClaim) return initClaim
 
   const candidates = [
     window.location.hash.startsWith("#") ? window.location.hash.slice(1) : window.location.hash,
@@ -512,7 +515,7 @@ function MiniAppInner() {
         const data = getInitData()
         if (data || attempts >= 20) {
           setInitData(data)
-          const code = getClaimCodeFromUrl()
+          const code = getClaimCodeFromUrl(data)
           setClaimCode(code)
           if (code) setTab("claim")
           return
@@ -532,8 +535,9 @@ function MiniAppInner() {
   }, [])
 
   useEffect(() => {
+    if (claimCode && tab === "claim" && !me) return
     refresh()
-  }, [refresh])
+  }, [claimCode, me, refresh, tab])
 
   async function connectAddress(address: string) {
     if (!address) return
