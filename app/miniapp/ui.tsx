@@ -479,6 +479,7 @@ function MiniAppInner() {
   const [manualAddress, setManualAddress] = useState("")
   const [sendForm, setSendForm] = useState({ recipient: "", amount: "", ask: "AUTO", offer: "TON" })
   const [quote, setQuote] = useState<QuoteResponse | null>(null)
+  const [activeClaim, setActiveClaim] = useState<{ claim: ClaimSummary; tip: TipSummary | null } | null>(null)
   const tonAddress = useTonAddress(true)
   const modal = useTonConnectModal()
   const [tonConnectUI] = useTonConnectUI()
@@ -632,6 +633,7 @@ function MiniAppInner() {
       setMessage(result.alreadyPrepared ? "Claim reminder sent to the sender." : "Claim ready. I sent the sender a confirm button.")
       setSendStage("success")
       setSendDetail(result.alreadyPrepared ? "The sender has the confirm/cancel buttons in Telegram." : "The sender has the confirm/cancel buttons in Telegram.")
+      setActiveClaim({ claim: result.claim, tip: result.tip })
       await refresh()
     } catch (err) {
       const nextError = (err as Error).message
@@ -642,6 +644,53 @@ function MiniAppInner() {
       // Stage carries the result state.
     }
   }
+
+  useEffect(() => {
+    const code = activeClaim?.claim.code
+    if (!initData || !code) return
+    let cancelled = false
+
+    const poll = async () => {
+      try {
+        const result = await api<{ ok: true; claim: ClaimSummary; tip: TipSummary | null }>(
+          `/api/miniapp/claims/${encodeURIComponent(code)}/status`,
+          initData,
+        )
+        if (cancelled) return
+        setActiveClaim({ claim: result.claim, tip: result.tip })
+
+        const tip = result.tip
+        const tipStatus = tip?.status
+        if (tip && tip.status === "sent") {
+          setClaimCode("")
+          setActiveClaim(null)
+          setTab("wallet")
+          setSendStage("idle")
+          setSendDetail("")
+          setMessage(`Tip received: ${tip.askAmount} ${tip.askToken}.`)
+          await refresh()
+          return
+        }
+        if (tipStatus === "cancelled" || tipStatus === "failed" || tipStatus === "expired" || result.claim.status === "cancelled" || result.claim.status === "failed" || result.claim.status === "expired") {
+          setClaimCode("")
+          setActiveClaim(null)
+          setTab("history")
+          setSendStage("failed")
+          setSendDetail(`Claim ${tipStatus ?? result.claim.status}.`)
+          await refresh()
+        }
+      } catch (err) {
+        if (!cancelled) setError((err as Error).message)
+      }
+    }
+
+    void poll()
+    const interval = window.setInterval(() => void poll(), 5000)
+    return () => {
+      cancelled = true
+      window.clearInterval(interval)
+    }
+  }, [activeClaim?.claim.code, initData, refresh])
 
   async function createQuote() {
     if (me?.wallet.mode === "external" && !tonAddress) {
@@ -1090,12 +1139,35 @@ function MiniAppInner() {
         {tab === "claim" && (
           <section className="rounded-lg border bg-card p-4">
             <h2 className="text-lg font-semibold">Claim tip</h2>
-            <p className="mt-1 text-sm text-muted-foreground">Connect or choose your receiving wallet, then prepare the claim.</p>
-            <Input className="mt-3" placeholder="claim code or link" value={claimCode} onChange={(e) => setClaimCode(e.target.value)} />
-            <Button className="mt-3 w-full" onClick={prepareClaim} disabled={busy || !claimCode}>
-              {sendStage === "confirming" && <Loader2 className="size-4 animate-spin" />}
-              Prepare claim for sender
-            </Button>
+            {activeClaim?.tip ? (
+              <div className="mt-3 rounded-md border p-3 text-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-medium">Waiting for sender</p>
+                    <p className="text-muted-foreground">
+                      @{activeClaim.claim.targetUsername} receives {activeClaim.tip.askAmount} {activeClaim.tip.askToken}.
+                    </p>
+                  </div>
+                  <StatusBadge status={activeClaim.tip.status} />
+                </div>
+                <p className="mt-3 text-xs text-muted-foreground">
+                  I sent the sender a confirm/cancel button. This screen updates automatically.
+                </p>
+                <Button className="mt-3 w-full" variant="secondary" onClick={refresh} disabled={refreshing}>
+                  {refreshing && <Loader2 className="size-4 animate-spin" />}
+                  Refresh activity
+                </Button>
+              </div>
+            ) : (
+              <>
+                <p className="mt-1 text-sm text-muted-foreground">Connect or choose your receiving wallet, then prepare the claim.</p>
+                <Input className="mt-3" placeholder="claim code or link" value={claimCode} onChange={(e) => setClaimCode(e.target.value)} />
+                <Button className="mt-3 w-full" onClick={prepareClaim} disabled={busy || !claimCode}>
+                  {sendStage === "confirming" && <Loader2 className="size-4 animate-spin" />}
+                  Prepare claim for sender
+                </Button>
+              </>
+            )}
           </section>
         )}
 
