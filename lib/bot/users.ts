@@ -159,6 +159,49 @@ export async function getOrCreateUser(input: {
 }): Promise<{ user: TgUser; wallet: TgWallet; created: boolean }> {
   const supabase = adminClient()
 
+  async function waitForActiveWallet(userId: string) {
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const { data: wallet, error: walletErr } = await supabase
+        .from("tg_wallets")
+        .select("*")
+        .eq("user_id", userId)
+        .eq("is_active", true)
+        .maybeSingle()
+
+      if (walletErr) throw walletErr
+      if (wallet) return wallet as unknown as TgWallet
+
+      await new Promise((resolve) => setTimeout(resolve, 150 * (attempt + 1)))
+    }
+
+    throw new Error("Your TipSwap wallet is still being created. Try again shortly.")
+  }
+
+  async function existingUserResult(user: TgUser) {
+    let nextUser = user
+    const profileUpdate: { tg_username?: string | null; first_name?: string | null } = {}
+    if (input.tgUsername !== undefined && input.tgUsername !== user.tg_username) {
+      profileUpdate.tg_username = input.tgUsername ?? null
+    }
+    if (input.firstName !== undefined && input.firstName !== user.first_name) {
+      profileUpdate.first_name = input.firstName ?? null
+    }
+    if (Object.keys(profileUpdate).length) {
+      const { data: updated, error: updateErr } = await supabase
+        .from("tg_users")
+        .update(profileUpdate)
+        .eq("id", user.id as string)
+        .select()
+        .single()
+
+      if (updateErr) throw updateErr
+      nextUser = updated as unknown as TgUser
+    }
+
+    const wallet = await waitForActiveWallet(nextUser.id)
+    return { user: nextUser, wallet, created: false }
+  }
+
   // 1. Look up existing user
   const { data: existing, error: lookupErr } = await supabase
     .from("tg_users")
@@ -169,35 +212,7 @@ export async function getOrCreateUser(input: {
   if (lookupErr) throw lookupErr
 
   if (existing) {
-    let user = existing
-    const profileUpdate: { tg_username?: string | null; first_name?: string | null } = {}
-    if (input.tgUsername !== undefined && input.tgUsername !== existing.tg_username) {
-      profileUpdate.tg_username = input.tgUsername ?? null
-    }
-    if (input.firstName !== undefined && input.firstName !== existing.first_name) {
-      profileUpdate.first_name = input.firstName ?? null
-    }
-    if (Object.keys(profileUpdate).length) {
-      const { data: updated, error: updateErr } = await supabase
-        .from("tg_users")
-        .update(profileUpdate)
-        .eq("id", existing.id as string)
-        .select()
-        .single()
-
-      if (updateErr) throw updateErr
-      user = updated
-    }
-
-    const { data: wallet, error: wErr } = await supabase
-      .from("tg_wallets")
-      .select("*")
-      .eq("user_id", user.id as string)
-      .eq("is_active", true)
-      .single()
-
-    if (wErr) throw wErr
-    return { user: user as unknown as TgUser, wallet: wallet as unknown as TgWallet, created: false }
+    return existingUserResult(existing as unknown as TgUser)
   }
 
   // 2. Insert user
@@ -214,7 +229,19 @@ export async function getOrCreateUser(input: {
     .select()
     .single()
 
-  if (insertErr) throw insertErr
+  if (insertErr) {
+    if (insertErr.code === "23505") {
+      const { data: racedUser, error: racedLookupErr } = await supabase
+        .from("tg_users")
+        .select("*")
+        .eq("tg_id", input.tgId)
+        .single()
+
+      if (racedLookupErr) throw racedLookupErr
+      return existingUserResult(racedUser as unknown as TgUser)
+    }
+    throw insertErr
+  }
 
   // 3. Generate managed wallet
   const generated = await generateNewWallet()

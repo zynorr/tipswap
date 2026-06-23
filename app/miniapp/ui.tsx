@@ -223,9 +223,10 @@ function getClaimCodeFromUrl() {
   if (typeof window === "undefined") return ""
   const url = new URL(window.location.href)
   const directClaim = url.searchParams.get("claim")
-  if (directClaim) return normalizeClaimInput(directClaim)
-  const bridgeClaim = window.Telegram?.WebApp?.initDataUnsafe?.start_param?.replace(/^claim_/, "")
-  if (bridgeClaim) return normalizeClaimInput(bridgeClaim)
+  const normalizedDirectClaim = normalizeClaimInput(directClaim)
+  if (normalizedDirectClaim) return normalizedDirectClaim
+  const bridgeClaim = normalizeClaimInput(window.Telegram?.WebApp?.initDataUnsafe?.start_param)
+  if (bridgeClaim) return bridgeClaim
 
   const candidates = [
     window.location.hash.startsWith("#") ? window.location.hash.slice(1) : window.location.hash,
@@ -233,11 +234,17 @@ function getClaimCodeFromUrl() {
   ]
   for (const candidate of candidates) {
     const params = new URLSearchParams(candidate)
-    const startParam = params.get("tgWebAppStartParam")
-    if (startParam) return normalizeClaimInput(startParam)
+    const startParam = normalizeClaimInput(params.get("tgWebAppStartParam"))
+    if (startParam) return startParam
   }
 
   return ""
+}
+
+function getTelegramOpenUrl() {
+  const code = getClaimCodeFromUrl()
+  const startApp = code ? `claim_${code}` : "miniapp"
+  return `https://t.me/${BOT_USERNAME}?startapp=${encodeURIComponent(startApp)}`
 }
 
 function normalizeClaimInput(input: string | null | undefined) {
@@ -254,7 +261,8 @@ function normalizeClaimInput(input: string | null | undefined) {
       url.hash.replace(/^#/, ""),
     )
   } catch {
-    return decodeURIComponent(raw).replace(/^claim_/, "")
+    const decoded = decodeURIComponent(raw).replace(/^claim_/, "")
+    return /^[A-Za-z0-9_-]{8,128}$/.test(decoded) ? decoded : ""
   }
 }
 
@@ -563,6 +571,16 @@ function MiniAppInner() {
   async function prepareClaim() {
     if (!claimCode) return
     const normalizedClaimCode = normalizeClaimInput(claimCode)
+    if (!normalizedClaimCode) {
+      const nextError = "Paste a valid TipSwap claim link or claim code."
+      setMessage("")
+      setError(nextError)
+      setSendStage("failed")
+      setSendDetail(nextError)
+      return
+    }
+    if (normalizedClaimCode !== claimCode) setClaimCode(normalizedClaimCode)
+
     setSendStage("confirming")
     setSendDetail("Preparing this claim with your active receiving wallet.")
     setError("")
@@ -781,7 +799,7 @@ function MiniAppInner() {
           </p>
           <a
             className="mt-4 inline-flex rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground"
-            href={`https://t.me/${BOT_USERNAME}?startapp=miniapp`}
+            href={getTelegramOpenUrl()}
           >
             Open @{BOT_USERNAME}
           </a>
@@ -1034,7 +1052,7 @@ function MiniAppInner() {
           <section className="rounded-lg border bg-card p-4">
             <h2 className="text-lg font-semibold">Claim tip</h2>
             <p className="mt-1 text-sm text-muted-foreground">Connect or choose your receiving wallet, then prepare the claim.</p>
-            <Input className="mt-3" placeholder="claim code" value={claimCode} onChange={(e) => setClaimCode(e.target.value)} />
+            <Input className="mt-3" placeholder="claim code or link" value={claimCode} onChange={(e) => setClaimCode(e.target.value)} />
             <Button className="mt-3 w-full" onClick={prepareClaim} disabled={busy || !claimCode}>
               {sendStage === "confirming" && <Loader2 className="size-4 animate-spin" />}
               Prepare claim for sender
