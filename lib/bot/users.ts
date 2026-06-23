@@ -119,9 +119,9 @@ export type TgExternalTipPayment = {
   recipient_user_id: string
   sender_address: string
   recipient_address: string
-  provider: "tonpay" | "stonfi"
-  asset: string
-  amount: string
+    provider: "tonpay" | "stonfi"
+    asset: string
+    amount: string
   reference: string | null
   body_base64_hash: string | null
   boc: string | null
@@ -1010,6 +1010,10 @@ export async function updateExternalTipPayment(
     boc?: string | null
     txHash?: string | null
     traceId?: string | null
+    reference?: string | null
+    bodyBase64Hash?: string | null
+    asset?: string
+    amount?: string
     error?: string | null
   },
 ) {
@@ -1018,12 +1022,20 @@ export async function updateExternalTipPayment(
     boc?: string | null
     tx_hash?: string | null
     trace_id?: string | null
+    reference?: string | null
+    body_base64_hash?: string | null
+    asset?: string
+    amount?: string
     error?: string | null
   } = {}
   if ("status" in patch) update.status = patch.status
   if ("boc" in patch) update.boc = patch.boc ?? null
   if ("txHash" in patch) update.tx_hash = patch.txHash ?? null
   if ("traceId" in patch) update.trace_id = patch.traceId ?? null
+  if ("reference" in patch) update.reference = patch.reference ?? null
+  if ("bodyBase64Hash" in patch) update.body_base64_hash = patch.bodyBase64Hash ?? null
+  if ("asset" in patch && patch.asset) update.asset = patch.asset
+  if ("amount" in patch && patch.amount) update.amount = patch.amount
   if ("error" in patch) update.error = patch.error ?? null
 
   const supabase = adminClient()

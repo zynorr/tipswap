@@ -16,6 +16,7 @@ import {
   getActiveWallet,
   getExternalTipPaymentByReference,
   getExternalTipPaymentByTipId,
+  getExternalTipPaymentsByTipIds,
   getTipById,
   getUserById,
   updateExternalTipPayment,
@@ -282,6 +283,146 @@ export async function prepareExternalTipPayment(params: {
       askSymbol: quote.askSymbol,
       quotedOfferAmount: quote.quotedOfferAmount,
       expectedOut: quote.expectedOut,
+      routerVersion: tx.routerVersion,
+    },
+  }
+}
+
+export async function prepareExternalPaymentForTip(params: {
+  tip: TgTip
+  sender: TgUser
+  senderWallet: TgWallet
+  senderAddress: string
+}) {
+  if (params.senderWallet.mode !== "external") {
+    throw new Error("External payment mode requires an external active wallet.")
+  }
+  if (params.tip.sender_user_id !== params.sender.id) {
+    throw new Error("Only the sender can sign this tip.")
+  }
+  if (params.tip.status !== "quoted") {
+    throw new Error(`Tip is already ${params.tip.status}.`)
+  }
+
+  const senderAddress = assertAddress(params.senderAddress, "Connected wallet address")
+  const activeAddress = assertAddress(params.senderWallet.address, "Active TipSwap wallet address")
+  if (senderAddress !== activeAddress) {
+    throw new Error("Connected TON wallet does not match your active TipSwap external wallet.")
+  }
+
+  const existingPayments = await getExternalTipPaymentsByTipIds([params.tip.id])
+  const existingPayment = existingPayments[0]
+  if (existingPayment && existingPayment.status !== "pending") {
+    throw new Error(`External payment is already ${existingPayment.status}.`)
+  }
+
+  const offer = resolveToken(params.tip.offer_token)
+  const ask = resolveToken(params.tip.ask_token)
+  const recipientAddress = assertAddress(params.tip.recipient_address, "Recipient wallet address")
+
+  if (offer.symbol === ask.symbol) {
+    if (existingPayment && existingPayment.provider !== "tonpay") {
+      throw new Error("This external payment was prepared for a different route.")
+    }
+
+    const raw = params.tip.offer_raw ? BigInt(params.tip.offer_raw) : toRawAmount(params.tip.ask_amount, ask.decimals)
+    if (raw <= 0n) throw new Error("Amount must be greater than zero.")
+    const formatted = formatTokenAmount(raw, ask.decimals)
+    const transfer = await createTonPayTransfer(
+      {
+        amount: asNumberAmount(formatted),
+        asset: tonPayAsset(offer.symbol, offer.mainnet),
+        recipientAddr: recipientAddress,
+        senderAddr: senderAddress,
+        commentToSender: externalTipComment(params.tip),
+        commentToRecipient: externalTipComment(params.tip),
+      },
+      tonPayOptions(),
+    )
+    const payment = existingPayment
+      ? await updateExternalTipPayment(existingPayment.id, {
+          status: "pending",
+          boc: null,
+          txHash: null,
+          traceId: null,
+          reference: transfer.reference,
+          bodyBase64Hash: transfer.bodyBase64Hash,
+          error: null,
+        })
+      : await createExternalTipPayment({
+          tipId: params.tip.id,
+          senderUserId: params.tip.sender_user_id,
+          recipientUserId: params.tip.recipient_user_id,
+          senderAddress,
+          recipientAddress,
+          provider: "tonpay",
+          asset: offer.symbol,
+          amount: formatted,
+          reference: transfer.reference,
+          bodyBase64Hash: transfer.bodyBase64Hash,
+        })
+
+    return {
+      type: "external" as const,
+      provider: "tonpay" as const,
+      tip: params.tip,
+      payment,
+      message: transfer.message,
+      quote: {
+        offerSymbol: offer.symbol,
+        askSymbol: ask.symbol,
+        quotedOfferAmount: formatted,
+        expectedOut: params.tip.expected_out ?? params.tip.ask_amount,
+        routerVersion: "tonpay",
+      },
+    }
+  }
+
+  const tx = await buildExternalTipSwapTransaction({
+    senderAddress,
+    recipientAddress,
+    offer: offer.symbol,
+    ask: ask.symbol,
+    askAmount: params.tip.ask_amount,
+    slippageBps: params.tip.slippage_bps,
+  })
+  if (existingPayment && existingPayment.provider !== "stonfi") {
+    throw new Error("This external payment was prepared for a different route.")
+  }
+  const payment = existingPayment
+    ? await updateExternalTipPayment(existingPayment.id, {
+        status: "pending",
+        boc: null,
+        txHash: null,
+        traceId: null,
+        reference: null,
+        bodyBase64Hash: null,
+        asset: offer.symbol,
+        amount: tx.offerAmount,
+        error: null,
+      })
+    : await createExternalTipPayment({
+        tipId: params.tip.id,
+        senderUserId: params.tip.sender_user_id,
+        recipientUserId: params.tip.recipient_user_id,
+        senderAddress,
+        recipientAddress,
+        provider: "stonfi",
+        asset: offer.symbol,
+        amount: tx.offerAmount,
+      })
+
+  return {
+    type: "external" as const,
+    provider: "stonfi" as const,
+    tip: params.tip,
+    payment,
+    message: tx.message,
+    quote: {
+      offerSymbol: offer.symbol,
+      askSymbol: ask.symbol,
+      quotedOfferAmount: tx.offerAmount,
+      expectedOut: tx.expectedOut,
       routerVersion: tx.routerVersion,
     },
   }

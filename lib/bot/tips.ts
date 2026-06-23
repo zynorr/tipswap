@@ -80,6 +80,12 @@ export function miniAppClaimLink(code: string) {
   return `${appUrl.replace(/\/$/, "")}/miniapp?claim=${encodeURIComponent(code)}`
 }
 
+export function miniAppTipSignLink(tipId: string) {
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL
+  if (!appUrl) return null
+  return `${appUrl.replace(/\/$/, "")}/miniapp?signTip=${encodeURIComponent(tipId)}`
+}
+
 export function claimCodeFromStart(args: string[]) {
   return normalizeClaimCode(args[0] ?? "", { requireStartPrefix: true })
 }
@@ -275,7 +281,10 @@ export async function prepareClaimForSenderConfirmation(params: {
 
   if (claim.status === "quoted" && claim.tip_id) {
     const existingTip = await getTipById(claim.tip_id)
-    return { claim, tip: existingTip, alreadyPrepared: true as const }
+    const sender = await getUserById(claim.sender_user_id)
+    if (!sender) throw new Error("Tip sender could not be found")
+    const senderWallet = await getActiveWallet(sender.id)
+    return { claim, sender, senderWallet, tip: existingTip, alreadyPrepared: true as const }
   }
   if (claim.status !== "pending") {
     throw new Error(`This tip claim is already ${claim.status}.`)
@@ -288,7 +297,7 @@ export async function prepareClaimForSenderConfirmation(params: {
   try {
     const sender = await getUserById(claim.sender_user_id)
     if (!sender) throw new Error("Tip sender could not be found")
-    const senderWallet = await getManagedWallet(sender.id)
+    const senderWallet = await getActiveWallet(sender.id)
     const prepared = await quoteAndStoreSingleTip({
       sender,
       senderWallet,

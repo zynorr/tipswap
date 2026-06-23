@@ -7,7 +7,6 @@ import { notifyClaimSenderForConfirmation } from "@/lib/bot/claim-notifications"
 import {
   getOptionalActiveWallet,
   getOrCreateUserProfile,
-  getUserById,
 } from "@/lib/bot/users"
 import { getMiniAppInitData, miniAppError } from "@/lib/miniapp/auth"
 import { validateTelegramInitData } from "@/lib/telegram/init-data"
@@ -40,16 +39,12 @@ export async function POST(
     const tip = prepared.tip
     if (!tip) throw new Error("Tip confirmation quote could not be found.")
 
-    const sender = "sender" in prepared
-      ? prepared.sender
-      : await getUserById(prepared.claim.sender_user_id)
-    if (!sender) throw new Error("Tip sender could not be found.")
-
     try {
       await notifyClaimSenderForConfirmation({
-        sender,
+        sender: prepared.sender,
         claim: prepared.claim,
         tip,
+        senderWallet: prepared.senderWallet,
         alreadyPrepared: prepared.alreadyPrepared,
       })
     } catch (err) {

@@ -1141,26 +1141,6 @@ export function getBot(): Bot {
       return
     }
 
-    if (senderWallet.mode !== "managed") {
-      let managedWallet: TgWallet | null = null
-      try {
-        managedWallet = await getManagedWallet(sender.id)
-      } catch (err) {
-        console.error("[tipswap] managed wallet lookup failed:", err)
-      }
-      await ctx.reply(
-        [
-          "Your active wallet is external, so TipSwap cannot sign this tip.",
-          "",
-          managedWallet
-            ? `Use /managed to switch back to your TipSwap wallet:\n<code>${managedWallet.address}</code>`
-            : "Use /start to create a managed wallet first.",
-        ].join("\n"),
-        { parse_mode: "HTML" },
-      )
-      return
-    }
-
     let offerToken: ReturnType<typeof resolveToken>
     let askToken: ReturnType<typeof resolveToken>
     try {
@@ -1233,6 +1213,19 @@ export function getBot(): Bot {
           wallet: await getActiveWallet(recipient.id),
           username,
         })
+      }
+
+      if (senderWallet.mode !== "managed") {
+        const replyMarkup = miniAppKeyboard()
+        await ctx.reply(
+          [
+            "Your active wallet is external, so this tip must be signed in the Mini App.",
+            "",
+            "For handles that have not claimed yet, I can still create a claim link here. For already registered recipients, open the Mini App to review and sign from your connected wallet.",
+          ].join("\n"),
+          replyMarkup ? { reply_markup: replyMarkup } : undefined,
+        )
+        return
       }
 
       const stored = await quoteAndStoreTips({

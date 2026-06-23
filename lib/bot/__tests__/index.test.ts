@@ -927,8 +927,17 @@ describe("/tip — quote flow", () => {
     await handler(ctx)
 
     expect(ctx.reply).toHaveBeenCalledWith(
-      expect.stringContaining("active wallet is external"),
-      expect.objectContaining({ parse_mode: "HTML" }),
+      expect.stringContaining("must be signed in the Mini App"),
+      expect.objectContaining({
+        reply_markup: expect.objectContaining({
+          buttons: expect.arrayContaining([
+            expect.objectContaining({
+              text: "Open Mini App",
+              web_app: expect.objectContaining({ url: "https://app.example.com/miniapp" }),
+            }),
+          ]),
+        }),
+      }),
     )
     expect(mockQuoteTipSwap).not.toHaveBeenCalled()
   })

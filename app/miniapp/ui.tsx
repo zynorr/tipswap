@@ -130,6 +130,22 @@ type QuoteResponse =
     }
   | { ok: true; type: "claim"; claim: ClaimSummary }
 
+type PreparedExternalTipResponse = {
+  ok: true
+  type: "external"
+  provider: "tonpay" | "stonfi"
+  tip: TipSummary
+  payment: ExternalSubmitResponse["payment"]
+  message: { address: string; amount: string; payload?: string }
+  quote: {
+    offerSymbol: string
+    askSymbol: string
+    quotedOfferAmount: string
+    expectedOut: string
+    routerVersion: string
+  }
+}
+
 type ExternalSubmitResponse = {
   ok: true
   tip: TipSummary
@@ -249,9 +265,54 @@ function getClaimCodeFromUrl(initData = "") {
   return ""
 }
 
+function normalizeTipId(input: string | null | undefined) {
+  const raw = input?.trim() ?? ""
+  if (!raw) return ""
+
+  try {
+    const url = new URL(raw)
+    return normalizeTipId(
+      url.searchParams.get("signTip") ??
+      url.searchParams.get("startapp") ??
+      url.searchParams.get("tgWebAppStartParam") ??
+      url.hash.replace(/^#/, ""),
+    )
+  } catch {
+    const decoded = decodeURIComponent(raw).replace(/^signtip_/, "")
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(decoded)
+      ? decoded
+      : ""
+  }
+}
+
+function getSignTipIdFromUrl(initData = "") {
+  if (typeof window === "undefined") return ""
+  const url = new URL(window.location.href)
+  const directTip = normalizeTipId(url.searchParams.get("signTip"))
+  if (directTip) return directTip
+  const unsafe = window.Telegram?.WebApp?.initDataUnsafe
+  const bridgeTip = normalizeTipId(unsafe?.start_param ?? unsafe?.startParam)
+  if (bridgeTip) return bridgeTip
+  const initTip = normalizeTipId(new URLSearchParams(initData || getInitData()).get("start_param"))
+  if (initTip) return initTip
+
+  const candidates = [
+    window.location.hash.startsWith("#") ? window.location.hash.slice(1) : window.location.hash,
+    window.location.search.startsWith("?") ? window.location.search.slice(1) : window.location.search,
+  ]
+  for (const candidate of candidates) {
+    const params = new URLSearchParams(candidate)
+    const startParam = normalizeTipId(params.get("tgWebAppStartParam"))
+    if (startParam) return startParam
+  }
+
+  return ""
+}
+
 function getTelegramOpenUrl() {
   const code = getClaimCodeFromUrl()
-  const startApp = code ? `claim_${code}` : "miniapp"
+  const signTipId = getSignTipIdFromUrl()
+  const startApp = code ? `claim_${code}` : signTipId ? `signtip_${signTipId}` : "miniapp"
   return `https://t.me/${BOT_USERNAME}?startapp=${encodeURIComponent(startApp)}`
 }
 
@@ -468,6 +529,7 @@ function OperationPanel({
 function MiniAppInner() {
   const [initData, setInitData] = useState("")
   const [claimCode, setClaimCode] = useState("")
+  const [signTipId, setSignTipId] = useState("")
   const [tab, setTab] = useState<"wallet" | "send" | "claim" | "history" | "settings">("wallet")
   const [me, setMe] = useState<MeResponse | null>(null)
   const [balances, setBalances] = useState<BalancesResponse["balances"] | null>(null)
@@ -485,6 +547,7 @@ function MiniAppInner() {
   const [sendForm, setSendForm] = useState({ recipient: "", amount: "", ask: "AUTO", offer: "TON" })
   const [quote, setQuote] = useState<QuoteResponse | null>(null)
   const [activeClaim, setActiveClaim] = useState<{ claim: ClaimSummary; tip: TipSummary | null } | null>(null)
+  const [loadedSignTipKey, setLoadedSignTipKey] = useState("")
   const tonAddress = useTonAddress(true)
   const modal = useTonConnectModal()
   const [tonConnectUI] = useTonConnectUI()
@@ -533,8 +596,11 @@ function MiniAppInner() {
         if (data || attempts >= 20) {
           setInitData(data)
           const code = getClaimCodeFromUrl(data)
+          const tipId = getSignTipIdFromUrl(data)
           setClaimCode(code)
+          setSignTipId(tipId)
           if (code) setTab("claim")
+          if (tipId) setTab("send")
           if (code) setPendingClaimChecked(true)
           return
         }
@@ -553,7 +619,7 @@ function MiniAppInner() {
   }, [])
 
   useEffect(() => {
-    if (!initData || claimCode || pendingClaimChecked) return
+    if (!initData || claimCode || signTipId || pendingClaimChecked) return
     let cancelled = false
 
     api<PendingClaimsResponse>("/api/miniapp/claims/pending", initData)
@@ -576,7 +642,7 @@ function MiniAppInner() {
     return () => {
       cancelled = true
     }
-  }, [claimCode, initData, pendingClaimChecked])
+  }, [claimCode, initData, pendingClaimChecked, signTipId])
 
   useEffect(() => {
     if (!initData) return
@@ -774,6 +840,86 @@ function MiniAppInner() {
       // Stage carries the result state.
     }
   }
+
+  const prepareExternalTipForSigning = useCallback(async (tipId: string) => {
+    if (!me?.wallet) {
+      const nextError = "Choose or connect the sender wallet before signing this tip."
+      setSendStage("failed")
+      setSendDetail(nextError)
+      setMessage("")
+      setError(nextError)
+      setQuote(null)
+      return
+    }
+    if (me.wallet.mode !== "external") {
+      const nextError = "This claim needs your connected wallet. Switch to the external wallet saved for this tip."
+      setSendStage("failed")
+      setSendDetail(nextError)
+      setMessage("")
+      setError(nextError)
+      setQuote(null)
+      return
+    }
+    if (!tonAddress) {
+      setSendStage("wallet")
+      setSendDetail("Connect the external wallet saved for this tip, then return to sign.")
+      setMessage("")
+      setError("")
+      modal.open()
+      return
+    }
+
+    setSendStage("quoting")
+    setSendDetail("Loading the prepared claim and building a wallet transaction.")
+    setMessage("")
+    setError("")
+    setQuote(null)
+    try {
+      const result = await api<PreparedExternalTipResponse>(
+        `/api/miniapp/tips/${encodeURIComponent(tipId)}/external-prepare`,
+        initData,
+        {
+          method: "POST",
+          body: JSON.stringify({ senderAddress: tonAddress }),
+        },
+      )
+      setQuote({
+        ok: true,
+        type: "external",
+        provider: result.provider,
+        tip: result.tip,
+        payment: result.payment,
+        message: result.message,
+        recipient: {
+          username: "claim recipient",
+          address: result.tip.recipientAddress,
+          receiveToken: result.tip.askToken,
+          usedPreference: false,
+        },
+        quote: result.quote,
+      })
+      setSendStage("quote-ready")
+      setSendDetail("Review the claim payment, then sign the transaction in your wallet.")
+      setMessage("Claim payment ready for wallet signature.")
+      await refresh()
+    } catch (err) {
+      const nextError = (err as Error).message
+      setError(nextError)
+      setSendStage("failed")
+      setSendDetail(nextError)
+    }
+  }, [initData, me, modal, refresh, tonAddress])
+
+  useEffect(() => {
+    if (!signTipId || !initData || !me) return
+    if (quote?.type === "external" && quote.tip.id === signTipId) return
+    if (!["idle", "success"].includes(sendStage)) return
+    const key = `${signTipId}:${me.wallet?.address ?? "none"}:${tonAddress || "disconnected"}`
+    if (loadedSignTipKey === key) return
+
+    setLoadedSignTipKey(key)
+    void prepareExternalTipForSigning(signTipId)
+  }, [initData, loadedSignTipKey, me, prepareExternalTipForSigning, quote, sendStage, signTipId, tonAddress])
 
   async function confirmTip(tipId: string) {
     setSendStage("confirming")
@@ -1137,8 +1283,9 @@ function MiniAppInner() {
                   <div>
                     <p className="font-medium">Wallet signature required</p>
                     <p className="text-muted-foreground">
-                      @{quote.recipient.username} receives {quote.recipient.receiveToken}
-                      {quote.recipient.usedPreference ? " by preference" : ""}
+                      {quote.recipient.username === "claim recipient"
+                        ? `Claim recipient receives ${quote.recipient.receiveToken}`
+                        : `@${quote.recipient.username} receives ${quote.recipient.receiveToken}${quote.recipient.usedPreference ? " by preference" : ""}`}
                     </p>
                   </div>
                   <Badge variant="outline" className="uppercase">{quote.provider}</Badge>
