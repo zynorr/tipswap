@@ -250,7 +250,7 @@ function getRegisteredReactionHandlers(): Array<{
 // ─── Import after mocks are set up ────────────────────────────────
 
 import { getBot } from "@/lib/bot/index"
-import { isAutoReceiveToken, resolveReceiveTokenForRecipient } from "@/lib/bot/tips"
+import { isAutoReceiveToken, normalizeClaimCode, resolveReceiveTokenForRecipient } from "@/lib/bot/tips"
 
 // ─── Helpers ──────────────────────────────────────────────────────
 
@@ -844,6 +844,15 @@ describe("/tip — quote flow", () => {
     expect(resolveReceiveTokenForRecipient("AUTO", { default_recv_token: "STON" }).symbol).toBe("STON")
     expect(resolveReceiveTokenForRecipient("PREFERENCE", { default_recv_token: "TON" }).symbol).toBe("TON")
     expect(resolveReceiveTokenForRecipient("USDT", { default_recv_token: "STON" }).symbol).toBe("USDT")
+  })
+
+  it("normalizes claim codes from raw codes, start payloads, and full links", () => {
+    expect(normalizeClaimCode("claimcode123")).toBe("claimcode123")
+    expect(normalizeClaimCode("claim_claimcode123")).toBe("claimcode123")
+    expect(normalizeClaimCode("https://t.me/tipswapbot?start=claim_claimcode123")).toBe("claimcode123")
+    expect(normalizeClaimCode("https://app.example.com/miniapp?claim=claimcode123")).toBe("claimcode123")
+    expect(normalizeClaimCode("claimcode123", { requireStartPrefix: true })).toBeNull()
+    expect(normalizeClaimCode("claim_claimcode123", { requireStartPrefix: true })).toBe("claimcode123")
   })
 
   it("creates a batch quote for multiple recipients", async () => {

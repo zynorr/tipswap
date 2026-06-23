@@ -222,9 +222,9 @@ function getClaimCodeFromUrl() {
   if (typeof window === "undefined") return ""
   const url = new URL(window.location.href)
   const directClaim = url.searchParams.get("claim")
-  if (directClaim) return directClaim
+  if (directClaim) return normalizeClaimInput(directClaim)
   const bridgeClaim = window.Telegram?.WebApp?.initDataUnsafe?.start_param?.replace(/^claim_/, "")
-  if (bridgeClaim) return bridgeClaim
+  if (bridgeClaim) return normalizeClaimInput(bridgeClaim)
 
   const candidates = [
     window.location.hash.startsWith("#") ? window.location.hash.slice(1) : window.location.hash,
@@ -233,10 +233,28 @@ function getClaimCodeFromUrl() {
   for (const candidate of candidates) {
     const params = new URLSearchParams(candidate)
     const startParam = params.get("tgWebAppStartParam")
-    if (startParam) return startParam.replace(/^claim_/, "")
+    if (startParam) return normalizeClaimInput(startParam)
   }
 
   return ""
+}
+
+function normalizeClaimInput(input: string | null | undefined) {
+  const raw = input?.trim() ?? ""
+  if (!raw) return ""
+
+  try {
+    const url = new URL(raw)
+    return normalizeClaimInput(
+      url.searchParams.get("claim") ??
+      url.searchParams.get("start") ??
+      url.searchParams.get("startapp") ??
+      url.searchParams.get("tgWebAppStartParam") ??
+      url.hash.replace(/^#/, ""),
+    )
+  } catch {
+    return decodeURIComponent(raw).replace(/^claim_/, "")
+  }
 }
 
 function manifestUrl() {
@@ -535,12 +553,13 @@ function MiniAppInner() {
 
   async function prepareClaim() {
     if (!claimCode) return
+    const normalizedClaimCode = normalizeClaimInput(claimCode)
     setSendStage("confirming")
     setSendDetail("Preparing this claim with your active receiving wallet.")
     setError("")
     try {
       const result = await api<{ ok: true; alreadyPrepared: boolean; claim: ClaimSummary; tip: TipSummary | null }>(
-        `/api/miniapp/claims/${encodeURIComponent(claimCode)}/prepare`,
+        `/api/miniapp/claims/${encodeURIComponent(normalizedClaimCode)}/prepare`,
         initData,
         { method: "POST", body: "{}" },
       )

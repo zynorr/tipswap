@@ -80,10 +80,34 @@ export function miniAppClaimLink(code: string) {
 }
 
 export function claimCodeFromStart(args: string[]) {
-  const payload = args[0] ?? ""
-  if (!payload.startsWith(CLAIM_START_PREFIX)) return null
-  const code = payload.slice(CLAIM_START_PREFIX.length)
-  return /^[A-Za-z0-9_-]{8,128}$/.test(code) ? code : null
+  return normalizeClaimCode(args[0] ?? "", { requireStartPrefix: true })
+}
+
+export function normalizeClaimCode(input: string | null | undefined, options: { requireStartPrefix?: boolean } = {}) {
+  const raw = input?.trim() ?? ""
+  if (!raw) return null
+
+  let payload = raw
+  try {
+    const url = new URL(raw)
+    payload =
+      url.searchParams.get("claim") ??
+      url.searchParams.get("start") ??
+      url.searchParams.get("startapp") ??
+      url.searchParams.get("tgWebAppStartParam") ??
+      url.hash.replace(/^#/, "")
+  } catch {
+    // The input is not a URL; treat it as a direct code or start payload.
+  }
+
+  payload = decodeURIComponent(payload.trim())
+  if (payload.startsWith(CLAIM_START_PREFIX)) {
+    payload = payload.slice(CLAIM_START_PREFIX.length)
+  } else if (options.requireStartPrefix) {
+    return null
+  }
+
+  return /^[A-Za-z0-9_-]{8,128}$/.test(payload) ? payload : null
 }
 
 export function sumDecimalStrings(values: string[]) {
@@ -210,7 +234,9 @@ export async function prepareClaimForSenderConfirmation(params: {
   recipientWallet: TgWallet
   recipientTelegramUsername?: string | null
 }) {
-  const claim = await getTipClaimByCode(params.code)
+  const code = normalizeClaimCode(params.code)
+  if (!code) throw new Error("That tip claim link is not valid.")
+  const claim = await getTipClaimByCode(code)
   if (!claim) throw new Error("That tip claim link is not valid.")
   if (isExpired(claim)) {
     await updateTipClaimStatus(claim.id, { status: "expired" })
