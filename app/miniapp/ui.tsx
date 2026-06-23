@@ -195,6 +195,11 @@ type HistoryResponse = {
   activity: ActivityItem[]
 }
 
+type PendingClaimsResponse = {
+  ok: true
+  claims: ClaimSummary[]
+}
+
 const TOKENS = ["TON", "USDT", "STON"] as const
 const RECEIVE_OPTIONS = ["AUTO", ...TOKENS] as const
 const BOT_USERNAME = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME ?? "tipswapperbot"
@@ -465,6 +470,7 @@ function MiniAppInner() {
   const [message, setMessage] = useState("")
   const [error, setError] = useState("")
   const [refreshing, setRefreshing] = useState(false)
+  const [pendingClaimChecked, setPendingClaimChecked] = useState(false)
   const [walletAction, setWalletAction] = useState<"connect" | "managed" | null>(null)
   const [sendStage, setSendStage] = useState<
     "idle" | "quoting" | "quote-ready" | "claim-ready" | "confirming" | "wallet" | "submitting" | "polling" | "success" | "failed"
@@ -518,6 +524,7 @@ function MiniAppInner() {
           const code = getClaimCodeFromUrl(data)
           setClaimCode(code)
           if (code) setTab("claim")
+          if (code) setPendingClaimChecked(true)
           return
         }
 
@@ -535,10 +542,37 @@ function MiniAppInner() {
   }, [])
 
   useEffect(() => {
+    if (!initData || claimCode || pendingClaimChecked) return
+    let cancelled = false
+
+    api<PendingClaimsResponse>("/api/miniapp/claims/pending", initData)
+      .then((result) => {
+        if (cancelled) return
+        const claim = result.claims[0]
+        if (claim) {
+          setClaimCode(claim.code)
+          setTab("claim")
+          setMessage(`Pending ${claim.askAmount} ${claim.askToken} claim found for @${claim.targetUsername}.`)
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) setError((err as Error).message)
+      })
+      .finally(() => {
+        if (!cancelled) setPendingClaimChecked(true)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [claimCode, initData, pendingClaimChecked])
+
+  useEffect(() => {
     if (!initData) return
+    if (!pendingClaimChecked) return
     if (claimCode && tab === "claim") return
     refresh()
-  }, [claimCode, initData, refresh, tab])
+  }, [claimCode, initData, pendingClaimChecked, refresh, tab])
 
   async function connectAddress(address: string) {
     if (!address) return
