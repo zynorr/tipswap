@@ -1,7 +1,8 @@
 import "server-only"
 
 import {
-  getOrCreateUser,
+  getOptionalActiveWallet,
+  getOrCreateUserProfile,
   type TgUser,
   type TgWallet,
 } from "@/lib/bot/users"
@@ -29,11 +30,15 @@ export function getMiniAppInitData(req: Request) {
 
 export async function requireMiniAppSession(req: Request): Promise<MiniAppSession> {
   const initData = validateTelegramInitData(getMiniAppInitData(req))
-  const { user, wallet } = await getOrCreateUser({
+  const { user } = await getOrCreateUserProfile({
     tgId: initData.user.id,
     tgUsername: initData.user.username ?? null,
     firstName: initData.user.first_name ?? null,
   })
+  const wallet = await getOptionalActiveWallet(user.id)
+  if (!wallet) {
+    throw new Error("Choose a wallet before using this Mini App action.")
+  }
 
   return { initData, user, wallet }
 }
@@ -42,4 +47,3 @@ export function miniAppError(err: unknown, status = 400) {
   const message = (err as Error).message ?? String(err)
   return Response.json({ ok: false, error: message }, { status })
 }
-

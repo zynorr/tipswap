@@ -1,15 +1,17 @@
-import { miniAppError, requireMiniAppSession } from "@/lib/miniapp/auth"
+import { getMiniAppInitData, miniAppError } from "@/lib/miniapp/auth"
 import {
   getExternalTipPaymentsByTipIds,
   getRecentSwapsForUser,
   getRecentTipClaimsForUser,
   getRecentTipsForUser,
+  getUserByTgId,
   type TgExternalTipPayment,
   type TgSwap,
   type TgTip,
   type TgTipClaim,
 } from "@/lib/bot/users"
 import { claimSummary, tipSummary } from "@/lib/bot/tips"
+import { validateTelegramInitData } from "@/lib/telegram/init-data"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -99,7 +101,17 @@ function claimActivity(claim: TgTipClaim) {
 
 export async function GET(req: Request) {
   try {
-    const { user } = await requireMiniAppSession(req)
+    const initData = validateTelegramInitData(getMiniAppInitData(req))
+    const user = await getUserByTgId(initData.user.id)
+    if (!user) {
+      return Response.json({
+        ok: true,
+        tips: [],
+        swaps: [],
+        claims: [],
+        activity: [],
+      })
+    }
     const [tips, swaps, claims] = await Promise.all([
       getRecentTipsForUser(user.id, 10),
       getRecentSwapsForUser(user.id, 8),

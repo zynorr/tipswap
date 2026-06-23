@@ -1,6 +1,8 @@
 import { getBalance, getJettonBalance } from "@/lib/wallet/ton"
 import { TOKENS } from "@/lib/ston/swap"
-import { miniAppError, requireMiniAppSession } from "@/lib/miniapp/auth"
+import { getUserWithOptionalActiveWalletByTgId } from "@/lib/bot/users"
+import { getMiniAppInitData, miniAppError } from "@/lib/miniapp/auth"
+import { validateTelegramInitData } from "@/lib/telegram/init-data"
 import { fromNano } from "@ton/core"
 
 export const runtime = "nodejs"
@@ -15,7 +17,15 @@ function formatJetton(raw: bigint, decimals: number) {
 
 export async function GET(req: Request) {
   try {
-    const { wallet } = await requireMiniAppSession(req)
+    const initData = validateTelegramInitData(getMiniAppInitData(req))
+    const { wallet } = await getUserWithOptionalActiveWalletByTgId(initData.user.id)
+    if (!wallet) {
+      return Response.json({
+        ok: true,
+        wallet: null,
+        balances: { TON: "0", USDT: "0", STON: "0" },
+      })
+    }
     const [ton, usdt, ston] = await Promise.all([
       getBalance(wallet.address),
       getJettonBalance(wallet.address, TOKENS.USDT.mainnet),
@@ -35,4 +45,3 @@ export async function GET(req: Request) {
     return miniAppError(err, 401)
   }
 }
-
