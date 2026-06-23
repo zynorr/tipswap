@@ -12,6 +12,8 @@ Evidence captured on June 23, 2026.
 - Tip tested: `0.1 TON`
 - Wallet mode shown in the sender flow: managed TipSwap wallet
 - Final state shown in both accounts: confirmed on-chain with transaction hash and explorer link
+- Transaction hash: `7948503b41167beaa8f6b8f5f5a7b69df232754b78d2947449c4c1ade53a5855`
+- Explorer: <https://tonscan.org/tx/7948503b41167beaa8f6b8f5f5a7b69df232754b78d2947449c4c1ade53a5855>
 
 ## Sender Evidence
 
@@ -33,6 +35,18 @@ What this proves:
 After the receiver prepares the claim and the sender confirms, the sender activity page shows the final `Tip sent` record as `Confirmed`, including a transaction hash and explorer button. The earlier claim-link record remains visible as the setup step.
 
 ![Sender activity screen](assets/tipswap-flow/sender-activity-screen.png)
+
+Transaction:
+
+```text
+7948503b41167beaa8f6b8f5f5a7b69df232754b78d2947449c4c1ade53a5855
+```
+
+Explorer:
+
+```text
+https://tonscan.org/tx/7948503b41167beaa8f6b8f5f5a7b69df232754b78d2947449c4c1ade53a5855
+```
 
 What this proves:
 
@@ -72,6 +86,18 @@ The receiver activity page shows `Tip received` as `Confirmed`, includes the rou
 
 ![Receiver activity screen](assets/tipswap-flow/receiver-activity-screen.jpeg)
 
+Transaction:
+
+```text
+7948503b41167beaa8f6b8f5f5a7b69df232754b78d2947449c4c1ade53a5855
+```
+
+Explorer:
+
+```text
+https://tonscan.org/tx/7948503b41167beaa8f6b8f5f5a7b69df232754b78d2947449c4c1ade53a5855
+```
+
 What this proves:
 
 - The receiver gets a persistent activity record.
@@ -88,4 +114,3 @@ The captured screens demonstrate that the claim-link tip flow works end to end:
 4. Sender confirms the prepared claim.
 5. Receiver wallet balance updates.
 6. Sender and receiver activity pages show confirmed on-chain status with transaction evidence.
-
