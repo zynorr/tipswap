@@ -535,9 +535,10 @@ function MiniAppInner() {
   }, [])
 
   useEffect(() => {
-    if (claimCode && tab === "claim" && !me) return
+    if (!initData) return
+    if (claimCode && tab === "claim") return
     refresh()
-  }, [claimCode, me, refresh, tab])
+  }, [claimCode, initData, refresh, tab])
 
   async function connectAddress(address: string) {
     if (!address) return
