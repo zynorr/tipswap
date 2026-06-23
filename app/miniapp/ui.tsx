@@ -21,6 +21,7 @@ import {
   Loader2,
   RefreshCw,
   Send,
+  Share2,
   Settings,
   Wallet,
   XCircle,
@@ -288,6 +289,14 @@ function formatDateTime(value: string | null | undefined) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(new Date(value))
+}
+
+function claimShareUrl(claim: ClaimSummary) {
+  const text = [
+    `@${claim.targetUsername}, you have a ${claim.askAmount} ${claim.askToken} tip waiting on TipSwap.`,
+    "Open this TipSwap claim link to choose your wallet and claim it.",
+  ].join("\n")
+  return `https://t.me/share/url?url=${encodeURIComponent(claim.miniAppLink)}&text=${encodeURIComponent(text)}`
 }
 
 function statusTone(status: string) {
@@ -1010,6 +1019,12 @@ function MiniAppInner() {
               <div className="mt-4 rounded-md border p-3 text-sm">
                 <p>@{quote.claim.targetUsername} needs to claim first.</p>
                 <p className="mt-2 break-all font-mono text-xs">{quote.claim.miniAppLink}</p>
+                <Button className="mt-3 w-full" asChild>
+                  <a href={claimShareUrl(quote.claim)} target="_blank" rel="noreferrer">
+                    <Share2 className="size-4" />
+                    Share to Telegram
+                  </a>
+                </Button>
               </div>
             )}
           </section>
