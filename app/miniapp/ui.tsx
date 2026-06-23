@@ -629,9 +629,9 @@ function MiniAppInner() {
         initData,
         { method: "POST", body: "{}" },
       )
-      setMessage(result.alreadyPrepared ? "Claim is already waiting for sender confirmation." : "Claim ready. Sender can confirm now.")
+      setMessage(result.alreadyPrepared ? "Claim reminder sent to the sender." : "Claim ready. I sent the sender a confirm button.")
       setSendStage("success")
-      setSendDetail(result.alreadyPrepared ? "The sender can confirm the existing quote." : "The sender can now confirm this tip.")
+      setSendDetail(result.alreadyPrepared ? "The sender has the confirm/cancel buttons in Telegram." : "The sender has the confirm/cancel buttons in Telegram.")
       await refresh()
     } catch (err) {
       const nextError = (err as Error).message
