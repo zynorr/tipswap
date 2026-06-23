@@ -1,13 +1,19 @@
 import { Address } from "@ton/core"
-import { connectExternalWallet } from "@/lib/bot/users"
-import { miniAppError, requireMiniAppSession } from "@/lib/miniapp/auth"
+import { connectExternalWallet, getOrCreateUserProfile } from "@/lib/bot/users"
+import { getMiniAppInitData, miniAppError } from "@/lib/miniapp/auth"
+import { validateTelegramInitData } from "@/lib/telegram/init-data"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
 export async function POST(req: Request) {
   try {
-    const { user } = await requireMiniAppSession(req)
+    const initData = validateTelegramInitData(getMiniAppInitData(req))
+    const { user } = await getOrCreateUserProfile({
+      tgId: initData.user.id,
+      tgUsername: initData.user.username ?? null,
+      firstName: initData.user.first_name ?? null,
+    })
     const body = await req.json().catch(() => ({}))
     const rawAddress = String(body.address ?? "")
     if (!rawAddress.trim()) {

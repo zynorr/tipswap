@@ -148,15 +148,92 @@ export type TgSwap = {
   updated_at: string
 }
 
+type TelegramUserProfileInput = {
+  tgId: number
+  tgUsername?: string | null
+  firstName?: string | null
+}
+
+export async function getOrCreateUserProfile(input: TelegramUserProfileInput): Promise<{
+  user: TgUser
+  created: boolean
+}> {
+  const supabase = adminClient()
+
+  async function updateProfile(user: TgUser) {
+    let nextUser = user
+    const profileUpdate: { tg_username?: string | null; first_name?: string | null } = {}
+    if (input.tgUsername !== undefined && input.tgUsername !== user.tg_username) {
+      profileUpdate.tg_username = input.tgUsername ?? null
+    }
+    if (input.firstName !== undefined && input.firstName !== user.first_name) {
+      profileUpdate.first_name = input.firstName ?? null
+    }
+
+    if (Object.keys(profileUpdate).length) {
+      const { data: updated, error } = await supabase
+        .from("tg_users")
+        .update(profileUpdate)
+        .eq("id", user.id as string)
+        .select()
+        .single()
+
+      if (error) throw error
+      nextUser = updated as unknown as TgUser
+    }
+
+    return nextUser
+  }
+
+  const { data: existing, error: lookupErr } = await supabase
+    .from("tg_users")
+    .select("*")
+    .eq("tg_id", input.tgId)
+    .maybeSingle()
+
+  if (lookupErr) throw lookupErr
+
+  if (existing) {
+    const user = await updateProfile(existing as unknown as TgUser)
+    return { user, created: false }
+  }
+
+  const { data: user, error: insertErr } = await supabase
+    .from("tg_users")
+    .insert({
+      tg_id: input.tgId,
+      tg_username: input.tgUsername ?? null,
+      first_name: input.firstName ?? null,
+      reaction_tip_amount: "1",
+      reaction_recv_token: "USDT",
+      reaction_pay_token: "TON",
+    })
+    .select()
+    .single()
+
+  if (insertErr) {
+    if (insertErr.code === "23505") {
+      const { data: racedUser, error: racedLookupErr } = await supabase
+        .from("tg_users")
+        .select("*")
+        .eq("tg_id", input.tgId)
+        .single()
+
+      if (racedLookupErr) throw racedLookupErr
+      const updatedUser = await updateProfile(racedUser as unknown as TgUser)
+      return { user: updatedUser, created: false }
+    }
+    throw insertErr
+  }
+
+  return { user: user as unknown as TgUser, created: true }
+}
+
 /**
  * Find or create a Telegram user. If the user is new, also generates and stores
  * a managed TON wallet for them.
  */
-export async function getOrCreateUser(input: {
-  tgId: number
-  tgUsername?: string | null
-  firstName?: string | null
-}): Promise<{ user: TgUser; wallet: TgWallet; created: boolean }> {
+export async function getOrCreateUser(input: TelegramUserProfileInput): Promise<{ user: TgUser; wallet: TgWallet; created: boolean }> {
   const supabase = adminClient()
 
   async function waitForActiveWallet(userId: string) {
@@ -316,6 +393,13 @@ export async function getUserByTgId(tgId: number) {
   return data as unknown as TgUser | null
 }
 
+export async function getUserWithOptionalActiveWalletByTgId(tgId: number) {
+  const user = await getUserByTgId(tgId)
+  if (!user) return { user: null, wallet: null }
+  const wallet = await getOptionalActiveWallet(user.id)
+  return { user, wallet }
+}
+
 export async function getActiveWallet(userId: string) {
   const supabase = adminClient()
   const { data, error } = await supabase
@@ -327,6 +411,19 @@ export async function getActiveWallet(userId: string) {
 
   if (error) throw error
   return data as unknown as TgWallet
+}
+
+export async function getOptionalActiveWallet(userId: string) {
+  const supabase = adminClient()
+  const { data, error } = await supabase
+    .from("tg_wallets")
+    .select("*")
+    .eq("user_id", userId)
+    .eq("is_active", true)
+    .maybeSingle()
+
+  if (error) throw error
+  return data as unknown as TgWallet | null
 }
 
 export async function updateUserPreferences(
@@ -372,6 +469,55 @@ export async function getManagedWallet(userId: string) {
 
   if (error) throw error
   return data as unknown as TgWallet
+}
+
+export async function activateManagedWallet(userId: string) {
+  const supabase = adminClient()
+
+  const { data: existing, error: lookupErr } = await supabase
+    .from("tg_wallets")
+    .select("*")
+    .eq("user_id", userId)
+    .eq("mode", "managed")
+    .maybeSingle()
+
+  if (lookupErr) throw lookupErr
+
+  const { error: deactivateErr } = await supabase
+    .from("tg_wallets")
+    .update({ is_active: false })
+    .eq("user_id", userId)
+  if (deactivateErr) throw deactivateErr
+
+  if (existing) {
+    const { data: active, error: activateErr } = await supabase
+      .from("tg_wallets")
+      .update({ is_active: true })
+      .eq("id", existing.id as string)
+      .select()
+      .single()
+
+    if (activateErr) throw activateErr
+    return active as unknown as TgWallet
+  }
+
+  const generated = await generateNewWallet()
+  const encrypted = encryptString(generated.mnemonic)
+  const { data: wallet, error: insertErr } = await supabase
+    .from("tg_wallets")
+    .insert({
+      user_id: userId,
+      address: generated.address,
+      public_key: generated.publicKey,
+      encrypted_mnemonic: encrypted,
+      mode: "managed",
+      is_active: true,
+    })
+    .select()
+    .single()
+
+  if (insertErr) throw insertErr
+  return wallet as unknown as TgWallet
 }
 
 export async function setActiveWallet(userId: string, mode: WalletMode) {

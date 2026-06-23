@@ -59,7 +59,7 @@ type MeResponse = {
   ok: true
   telegram: { id: number; username?: string; first_name?: string }
   user: { tg_username: string | null; default_recv_token: string }
-  wallet: WalletRow
+  wallet: WalletRow | null
   network: string
 }
 
@@ -307,6 +307,11 @@ function formatDateTime(value: string | null | undefined) {
   }).format(new Date(value))
 }
 
+function walletLabel(wallet: WalletRow | null | undefined) {
+  if (!wallet) return "No receiving wallet selected"
+  return wallet.mode === "external" ? "Connected wallet" : "Managed TipSwap wallet"
+}
+
 function claimShareUrl(claim: ClaimSummary) {
   const text = [
     `@${claim.targetUsername}, you have a ${claim.askAmount} ${claim.askToken} tip waiting on TipSwap.`,
@@ -492,12 +497,17 @@ function MiniAppInner() {
     setRefreshing(true)
     setError("")
     try {
-      const [nextMe, nextBalances, nextHistory] = await Promise.all([
-        api<MeResponse>("/api/miniapp/me", initData),
+      const nextMe = await api<MeResponse>("/api/miniapp/wallet/status", initData)
+      setMe(nextMe)
+      if (!nextMe.wallet) {
+        setBalances(null)
+        setHistory(null)
+        return
+      }
+      const [nextBalances, nextHistory] = await Promise.all([
         api<BalancesResponse>("/api/miniapp/balances", initData),
         api<HistoryResponse>("/api/miniapp/history", initData),
       ])
-      setMe(nextMe)
       setBalances(nextBalances.balances)
       setHistory(nextHistory)
     } catch (err) {
@@ -620,9 +630,26 @@ function MiniAppInner() {
       return
     }
     if (normalizedClaimCode !== claimCode) setClaimCode(normalizedClaimCode)
+    if (!me?.wallet) {
+      const nextError = "Choose a receiving wallet before preparing this claim."
+      setMessage("")
+      setError(nextError)
+      setSendStage("failed")
+      setSendDetail(nextError)
+      return
+    }
+    if (me.wallet.mode === "external" && !activeWalletIsConnected) {
+      const nextError = "Reconnect the external wallet saved for this claim before preparing it."
+      setMessage("")
+      setError(nextError)
+      setSendStage("failed")
+      setSendDetail(nextError)
+      modal.open()
+      return
+    }
 
     setSendStage("confirming")
-    setSendDetail("Preparing this claim with your active receiving wallet.")
+    setSendDetail(`Preparing this claim with your ${me.wallet.mode} receiving wallet.`)
     setError("")
     try {
       const result = await api<{ ok: true; alreadyPrepared: boolean; claim: ClaimSummary; tip: TipSummary | null }>(
@@ -693,7 +720,16 @@ function MiniAppInner() {
   }, [activeClaim?.claim.code, initData, refresh])
 
   async function createQuote() {
-    if (me?.wallet.mode === "external" && !tonAddress) {
+    if (!me?.wallet) {
+      const nextError = "Choose or connect a wallet before reviewing this quote."
+      setSendStage("failed")
+      setSendDetail(nextError)
+      setMessage("")
+      setError(nextError)
+      setQuote(null)
+      return
+    }
+    if (me.wallet.mode === "external" && !tonAddress) {
       const nextError = "Connect your saved external wallet before reviewing this quote."
       setSendStage("failed")
       setSendDetail(nextError)
@@ -833,9 +869,12 @@ function MiniAppInner() {
   }
 
   const connectedWalletDifferent = useMemo(() => {
-    if (!tonAddress || !me?.wallet.address) return false
+    if (!tonAddress || !me?.wallet?.address) return false
     return tonAddress !== me.wallet.address
-  }, [tonAddress, me?.wallet.address])
+  }, [tonAddress, me?.wallet?.address])
+
+  const activeWalletIsConnected = Boolean(tonAddress && me?.wallet?.mode === "external" && tonAddress === me.wallet.address)
+  const claimWalletReady = Boolean(me?.wallet)
 
   const sendSteps = useMemo<OperationStep[]>(() => {
     const external = quote?.type === "external"
@@ -954,12 +993,12 @@ function MiniAppInner() {
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-sm text-muted-foreground">Active wallet</p>
-                <p className="font-medium">{me?.wallet.mode ?? "..."}</p>
+                <p className="font-medium">{walletLabel(me?.wallet)}</p>
               </div>
-              <Badge>{me?.wallet.mode ?? "loading"}</Badge>
+              <Badge>{me?.wallet?.mode ?? "needed"}</Badge>
             </div>
             <div className="mt-3 rounded-md bg-secondary p-3 font-mono text-xs">
-              {me?.wallet.address ?? "Loading..."}
+              {me?.wallet?.address ?? "Connect your own wallet or choose a managed wallet."}
             </div>
             <div className="mt-3 grid grid-cols-3 gap-2">
               {TOKENS.map((token) => (
@@ -1001,12 +1040,14 @@ function MiniAppInner() {
               <div>
                 <h2 className="text-lg font-semibold">Send a tip</h2>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  {me?.wallet.mode === "external"
+                  {!me?.wallet
+                    ? "Choose a wallet before sending."
+                    : me.wallet.mode === "external"
                     ? "Your connected wallet signs the transaction."
                     : "Your managed TipSwap wallet sends after confirmation."}
                 </p>
               </div>
-              <Badge variant="outline">{me?.wallet.mode ?? "..."}</Badge>
+              <Badge variant="outline">{me?.wallet?.mode ?? "needed"}</Badge>
             </div>
             <div className="mt-3 flex flex-col gap-2">
               <Input placeholder="@alice" value={sendForm.recipient} onChange={(e) => setSendForm({ ...sendForm, recipient: e.target.value })} />
@@ -1031,7 +1072,7 @@ function MiniAppInner() {
               </div>
               <Button onClick={createQuote} disabled={busy || !sendForm.recipient || !sendForm.amount}>
                 {sendStage === "quoting" ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
-                {sendStage === "quoting" ? "Building quote" : me?.wallet.mode === "external" && !tonAddress ? "Connect wallet to review" : "Review quote"}
+                {sendStage === "quoting" ? "Building quote" : me?.wallet?.mode === "external" && !tonAddress ? "Connect wallet to review" : "Review quote"}
               </Button>
               <p className="text-xs text-muted-foreground">
                 By default, the recipient&apos;s saved /receive token decides what they get.
@@ -1160,9 +1201,50 @@ function MiniAppInner() {
               </div>
             ) : (
               <>
-                <p className="mt-1 text-sm text-muted-foreground">Connect or choose your receiving wallet, then prepare the claim.</p>
+                <p className="mt-1 text-sm text-muted-foreground">Choose where this tip should arrive, then prepare the claim for the sender.</p>
+                <div className="mt-3 rounded-md border p-3 text-sm">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-medium">{walletLabel(me?.wallet)}</p>
+                      <p className="mt-1 break-all font-mono text-xs text-muted-foreground">
+                        {me?.wallet?.address ?? "Connect your own wallet or choose a TipSwap managed wallet."}
+                      </p>
+                    </div>
+                    <Badge variant={me?.wallet?.mode === "external" ? "default" : "secondary"}>
+                      {me?.wallet?.mode ?? "needed"}
+                    </Badge>
+                  </div>
+                  {me?.wallet?.mode === "external" && !activeWalletIsConnected && (
+                    <p className="mt-3 rounded-md border border-amber-500/30 bg-amber-500/10 p-2 text-xs text-amber-700 dark:text-amber-300">
+                      Reconnect this wallet in TON Connect before preparing the claim.
+                    </p>
+                  )}
+                </div>
+                <div className="mt-3 flex flex-col gap-2">
+                  <TonConnectButton />
+                  {tonAddress && (!me?.wallet || connectedWalletDifferent) && (
+                    <Button onClick={() => connectAddress(tonAddress)} disabled={busy}>
+                      {walletAction === "connect" && <Loader2 className="size-4 animate-spin" />}
+                      Use connected wallet for this claim
+                    </Button>
+                  )}
+                  <div className="flex gap-2">
+                    <Input
+                      value={manualAddress}
+                      onChange={(event) => setManualAddress(event.target.value)}
+                      placeholder="Paste UQ... receiving address"
+                    />
+                    <Button size="icon" onClick={() => connectAddress(manualAddress)} disabled={busy}>
+                      {walletAction === "connect" ? <Loader2 className="size-4 animate-spin" /> : <Clipboard className="size-4" />}
+                    </Button>
+                  </div>
+                  <Button variant="secondary" onClick={switchManaged} disabled={busy}>
+                    {walletAction === "managed" && <Loader2 className="size-4 animate-spin" />}
+                    Use TipSwap managed wallet instead
+                  </Button>
+                </div>
                 <Input className="mt-3" placeholder="claim code or link" value={claimCode} onChange={(e) => setClaimCode(e.target.value)} />
-                <Button className="mt-3 w-full" onClick={prepareClaim} disabled={busy || !claimCode}>
+                <Button className="mt-3 w-full" onClick={prepareClaim} disabled={busy || !claimCode || !claimWalletReady || (me?.wallet?.mode === "external" && !activeWalletIsConnected)}>
                   {sendStage === "confirming" && <Loader2 className="size-4 animate-spin" />}
                   Prepare claim for sender
                 </Button>

@@ -1,11 +1,16 @@
-import { miniAppError, requireMiniAppSession } from "@/lib/miniapp/auth"
 import {
   claimSummary,
   prepareClaimForSenderConfirmation,
   tipSummary,
 } from "@/lib/bot/tips"
 import { notifyClaimSenderForConfirmation } from "@/lib/bot/claim-notifications"
-import { getUserById } from "@/lib/bot/users"
+import {
+  getOptionalActiveWallet,
+  getOrCreateUserProfile,
+  getUserById,
+} from "@/lib/bot/users"
+import { getMiniAppInitData, miniAppError } from "@/lib/miniapp/auth"
+import { validateTelegramInitData } from "@/lib/telegram/init-data"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -15,7 +20,16 @@ export async function POST(
   { params }: { params: Promise<{ code: string }> },
 ) {
   try {
-    const { user, wallet, initData } = await requireMiniAppSession(req)
+    const initData = validateTelegramInitData(getMiniAppInitData(req))
+    const { user } = await getOrCreateUserProfile({
+      tgId: initData.user.id,
+      tgUsername: initData.user.username ?? null,
+      firstName: initData.user.first_name ?? null,
+    })
+    const wallet = await getOptionalActiveWallet(user.id)
+    if (!wallet) {
+      throw new Error("Choose a receiving wallet before preparing this claim.")
+    }
     const { code } = await params
     const prepared = await prepareClaimForSenderConfirmation({
       code,
