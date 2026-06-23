@@ -11,6 +11,7 @@ import {
   type TgTipClaim,
 } from "@/lib/bot/users"
 import { claimSummary, tipSummary } from "@/lib/bot/tips"
+import { refreshStonfiExternalPayment, refreshTonPayTransfer } from "@/lib/miniapp/external-tips"
 import { validateTelegramInitData } from "@/lib/telegram/init-data"
 
 export const runtime = "nodejs"
@@ -25,18 +26,44 @@ function externalSummary(payment?: TgExternalTipPayment) {
     reference: payment.reference,
     txHash: payment.tx_hash,
     traceId: payment.trace_id,
+    bodyBase64Hash: payment.body_base64_hash,
     error: payment.error,
     updatedAt: payment.updated_at,
   }
 }
 
+async function reconcileExternalPayments(payments: TgExternalTipPayment[]) {
+  return Promise.all(payments.map(async (payment) => {
+    if (!["pending", "submitted"].includes(payment.status)) {
+      return payment
+    }
+
+    try {
+      if (payment.provider === "tonpay" && payment.reference) {
+        const result = await refreshTonPayTransfer(payment.reference)
+        return result.payment
+      }
+      if (payment.provider === "stonfi") {
+        const result = await refreshStonfiExternalPayment(payment)
+        return result.payment
+      }
+    } catch {
+      return payment
+    }
+    return payment
+  }))
+}
+
 function tipActivity(tip: TgTip, userId: string, payment?: TgExternalTipPayment) {
   const direction = tip.sender_user_id === userId ? "sent" : "received"
+  const updatedAt = payment && new Date(payment.updated_at).getTime() > new Date(tip.updated_at).getTime()
+    ? payment.updated_at
+    : tip.updated_at
   return {
     id: `tip:${tip.id}`,
     kind: "tip" as const,
     direction,
-    status: tip.status,
+    status: payment?.status ?? tip.status,
     title: direction === "sent" ? "Tip sent" : "Tip received",
     primaryAmount: `${tip.ask_amount} ${tip.ask_token}`,
     secondaryAmount: tip.quoted_offer_amount
@@ -50,7 +77,7 @@ function tipActivity(tip: TgTip, userId: string, payment?: TgExternalTipPayment)
     txHash: payment?.tx_hash ?? tip.tx_hash,
     error: payment?.error ?? tip.error,
     createdAt: tip.created_at,
-    updatedAt: tip.updated_at,
+    updatedAt,
     expiresAt: tip.expires_at,
     externalPayment: externalSummary(payment),
   }
@@ -117,14 +144,14 @@ export async function GET(req: Request) {
       getRecentSwapsForUser(user.id, 8),
       getRecentTipClaimsForUser(user.id, 8),
     ])
-    const payments = await getExternalTipPaymentsByTipIds(tips.map((tip) => tip.id))
+    const payments = await reconcileExternalPayments(await getExternalTipPaymentsByTipIds(tips.map((tip) => tip.id)))
     const paymentsByTip = new Map(payments.map((payment) => [payment.tip_id, payment]))
     const activity = [
       ...tips.map((tip) => tipActivity(tip, user.id, paymentsByTip.get(tip.id))),
       ...swaps.map(swapActivity),
       ...claims.map(claimActivity),
     ]
-      .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
+      .sort((left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime())
       .slice(0, 20)
 
     return Response.json({

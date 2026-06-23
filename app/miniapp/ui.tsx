@@ -197,6 +197,7 @@ type ActivityItem = {
     reference: string | null
     txHash: string | null
     traceId: string | null
+    bodyBase64Hash: string | null
     error: string | null
     updatedAt: string
   } | null
@@ -381,14 +382,36 @@ function claimShareUrl(claim: ClaimSummary) {
   return `https://t.me/share/url?url=${encodeURIComponent(claim.miniAppLink)}&text=${encodeURIComponent(text)}`
 }
 
-function statusTone(status: string) {
-  if (["sent", "success", "completed"].includes(status)) return "success"
-  if (["failed", "cancelled", "expired", "error"].includes(status)) return "danger"
-  if (["sending", "submitted", "pending", "quoted", "quoting"].includes(status)) return "pending"
+type ActivityTone = "success" | "danger" | "pending" | "neutral"
+
+function statusTone(status: string): ActivityTone {
+  const normalized = status.toLowerCase()
+  if (["sent", "success", "completed"].includes(normalized)) return "success"
+  if (["failed", "cancelled", "expired", "error"].includes(normalized)) return "danger"
+  if (["sending", "submitted", "pending", "quoted", "quoting"].includes(normalized)) return "pending"
   return "neutral"
 }
 
-function StatusBadge({ status }: { status: string }) {
+function displayStatus(status: string) {
+  const normalized = status.toLowerCase()
+  const labels: Record<string, string> = {
+    sent: "Confirmed",
+    success: "Confirmed",
+    completed: "Confirmed",
+    failed: "Failed",
+    error: "Failed",
+    cancelled: "Cancelled",
+    expired: "Expired",
+    sending: "Confirming",
+    submitted: "Submitted",
+    pending: "Pending",
+    quoted: "Ready",
+    quoting: "Quoting",
+  }
+  return labels[normalized] ?? status
+}
+
+function StatusBadge({ status, label }: { status: string; label?: string }) {
   const tone = statusTone(status)
   return (
     <Badge
@@ -401,33 +424,156 @@ function StatusBadge({ status }: { status: string }) {
       {tone === "success" && <CheckCircle2 className="size-3" />}
       {tone === "danger" && <XCircle className="size-3" />}
       {tone === "pending" && <Clock3 className="size-3" />}
-      {status}
+      {label ?? displayStatus(status)}
     </Badge>
+  )
+}
+
+function activityOutcome(item: ActivityItem) {
+  const paymentStatus = item.externalPayment?.status
+  const status = (paymentStatus ?? item.status).toLowerCase()
+  const tone = statusTone(status)
+  const provider = item.externalPayment?.provider
+
+  if (tone === "success") {
+    return {
+      tone,
+      label: "Confirmed",
+      title: item.kind === "swap" ? "Swap went through" : item.direction === "received" ? "Received" : "Sent",
+      detail: item.txHash || item.externalPayment?.txHash
+        ? "Confirmed on-chain."
+        : "Marked complete by TipSwap.",
+    }
+  }
+
+  if (tone === "danger") {
+    return {
+      tone,
+      label: displayStatus(status),
+      title: status === "cancelled" ? "Cancelled" : status === "expired" ? "Expired" : "Failed",
+      detail: item.error || item.externalPayment?.error || "This transaction did not complete.",
+    }
+  }
+
+  if (status === "submitted") {
+    return {
+      tone,
+      label: "Submitted",
+      title: "Wallet signed",
+      detail: provider === "stonfi"
+        ? "Submitted from your wallet. On-chain confirmation is still being tracked."
+        : "Submitted from your wallet and waiting for payment indexing.",
+    }
+  }
+
+  if (status === "sending") {
+    return {
+      tone,
+      label: "Confirming",
+      title: "Waiting for chain confirmation",
+      detail: provider === "stonfi"
+        ? "Swap transaction was submitted. Refresh for the latest state."
+        : "TipSwap is waiting for the transfer to settle.",
+    }
+  }
+
+  if (status === "pending") {
+    return {
+      tone,
+      label: "Pending",
+      title: "Waiting for action",
+      detail: provider ? "Payment was prepared but has not been signed yet." : "This item is waiting for the next step.",
+    }
+  }
+
+  if (status === "quoted") {
+    return {
+      tone,
+      label: "Ready",
+      title: "Ready to send",
+      detail: item.kind === "claim" ? "Claim link is waiting for the receiver." : "Quote is ready for confirmation.",
+    }
+  }
+
+  return {
+    tone,
+    label: displayStatus(status),
+    title: "Status updated",
+    detail: item.error || item.externalPayment?.error || "Refresh activity for the latest state.",
+  }
+}
+
+function activityIconClass(tone: ActivityTone, direction: ActivityItem["direction"]) {
+  if (tone === "success") return "bg-emerald-500/10 text-emerald-600"
+  if (tone === "danger") return "bg-destructive/10 text-destructive"
+  if (tone === "pending") return "bg-amber-500/10 text-amber-600"
+  return direction === "received" ? "bg-emerald-500/10 text-emerald-600" : "bg-primary/10 text-primary"
+}
+
+function ActivityIcon({
+  tone,
+  direction,
+}: {
+  tone: ActivityTone
+  direction: ActivityItem["direction"]
+}) {
+  if (tone === "success") return <CheckCircle2 className="size-4" />
+  if (tone === "danger") return <XCircle className="size-4" />
+  if (tone === "pending") return <Clock3 className="size-4" />
+  return direction === "received" ? <ArrowDownLeft className="size-4" /> : <ArrowUpRight className="size-4" />
+}
+
+function shortValue(value: string) {
+  return value.length > 20 ? `${value.slice(0, 10)}...${value.slice(-8)}` : value
+}
+
+function DetailRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0 rounded-md bg-secondary px-2 py-1.5">
+      <p className="text-[11px] uppercase text-muted-foreground">{label}</p>
+      <p className="truncate font-mono text-xs text-foreground">{value}</p>
+    </div>
   )
 }
 
 function ActivityCard({ item }: { item: ActivityItem }) {
   const txHash = item.externalPayment?.txHash ?? item.txHash
   const explorerHref = txHash ? `${TONSCAN_URL}/tx/${encodeURIComponent(txHash)}` : null
+  const outcome = activityOutcome(item)
+  const sourceLabel = item.source === "claim" ? "claim link" : item.source
   return (
-    <article className="rounded-lg border bg-card p-3">
+    <article
+      className={cn(
+        "rounded-lg border bg-card p-3",
+        outcome.tone === "success" && "border-emerald-500/25",
+        outcome.tone === "danger" && "border-destructive/30",
+        outcome.tone === "pending" && "border-amber-500/30",
+      )}
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 gap-3">
           <div
             className={cn(
               "mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-md",
-              item.direction === "received"
-                ? "bg-emerald-500/10 text-emerald-600"
-                : "bg-primary/10 text-primary",
+              activityIconClass(outcome.tone, item.direction),
             )}
           >
-            {item.direction === "received" ? <ArrowDownLeft className="size-4" /> : <ArrowUpRight className="size-4" />}
+            <ActivityIcon tone={outcome.tone} direction={item.direction} />
           </div>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h3 className="text-sm font-semibold">{item.title}</h3>
-              <StatusBadge status={item.status} />
+              <StatusBadge status={item.externalPayment?.status ?? item.status} label={outcome.label} />
             </div>
+            <p className={cn(
+              "mt-1 text-xs font-medium",
+              outcome.tone === "success" && "text-emerald-700 dark:text-emerald-300",
+              outcome.tone === "danger" && "text-destructive",
+              outcome.tone === "pending" && "text-amber-700 dark:text-amber-300",
+              outcome.tone === "neutral" && "text-muted-foreground",
+            )}>
+              {outcome.title}
+            </p>
             <p className="mt-1 text-sm">
               <span className="font-medium">{item.primaryAmount}</span>
               {item.secondaryAmount && <span className="text-muted-foreground"> · {item.secondaryAmount}</span>}
@@ -435,20 +581,37 @@ function ActivityCard({ item }: { item: ActivityItem }) {
             <p className="mt-1 text-xs text-muted-foreground">{item.route}</p>
           </div>
         </div>
-        <time className="shrink-0 text-xs text-muted-foreground">{formatDateTime(item.createdAt)}</time>
+        <time className="shrink-0 text-xs text-muted-foreground">{formatDateTime(item.updatedAt)}</time>
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
         <Badge variant="outline" className="capitalize">{item.kind}</Badge>
-        <Badge variant="outline" className="capitalize">{item.source}</Badge>
+        <Badge variant="outline" className="capitalize">{sourceLabel}</Badge>
+        <Badge variant="outline" className="capitalize">{item.direction}</Badge>
         {item.externalPayment && (
           <Badge variant="outline" className="uppercase">{item.externalPayment.provider}</Badge>
         )}
         {item.recipientAddress && <span className="font-mono">{shortAddress(item.recipientAddress)}</span>}
       </div>
-      {item.error && (
-        <p className="mt-3 rounded-md border border-destructive/30 bg-destructive/10 p-2 text-xs text-destructive">
-          {item.error}
+      <div className={cn(
+        "mt-3 rounded-md border p-2 text-xs",
+        outcome.tone === "danger"
+          ? "border-destructive/30 bg-destructive/10 text-destructive"
+          : "bg-secondary/50 text-muted-foreground",
+      )}>
+        <p>
+          {outcome.detail}
+          {item.externalPayment && item.externalPayment.status !== item.status && (
+            <span> Tip status: {displayStatus(item.status)}.</span>
+          )}
         </p>
+      </div>
+      {(txHash || item.externalPayment?.reference || item.externalPayment?.traceId || item.externalPayment?.bodyBase64Hash) && (
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          {txHash && <DetailRow label="Tx" value={shortValue(txHash)} />}
+          {item.externalPayment?.reference && <DetailRow label="Reference" value={shortValue(item.externalPayment.reference)} />}
+          {item.externalPayment?.traceId && <DetailRow label="Trace" value={shortValue(item.externalPayment.traceId)} />}
+          {item.externalPayment?.bodyBase64Hash && <DetailRow label="Body hash" value={shortValue(item.externalPayment.bodyBase64Hash)} />}
+        </div>
       )}
       <div className="mt-3 flex flex-wrap gap-2">
         {explorerHref && (
@@ -997,9 +1160,9 @@ function MiniAppInner() {
           setSendDetail(nextError)
         }
       } else {
-        setMessage("Swap submitted. Tip is marked as sending while the transaction settles.")
+        setMessage("Swap submitted. Activity will update after chain confirmation.")
         setSendStage("success")
-        setSendDetail("The signed swap was submitted. History will show it as sending until reconciliation catches up.")
+        setSendDetail("The signed swap was submitted. Refresh Activity in a few seconds to confirm the final result.")
       }
 
       setQuote(null)
@@ -1029,7 +1192,7 @@ function MiniAppInner() {
           ["Quote", "Recipient, route, gas, and amount checked."],
           ["Wallet approval", "Approve the transaction in your connected wallet."],
           ["Submit", "Record the signed transaction with TipSwap."],
-          [quote.provider === "tonpay" ? "Confirm" : "Track", quote.provider === "tonpay" ? "Wait for TON Pay confirmation." : "Watch history while the swap settles."],
+          [quote.provider === "tonpay" ? "Confirm" : "Track", quote.provider === "tonpay" ? "Wait for TON Pay confirmation." : "Confirm the submitted swap in Activity."],
         ]
       : [
           ["Quote", "Recipient, route, gas, and amount checked."],

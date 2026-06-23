@@ -26,6 +26,7 @@ import {
   type TgUser,
   type TgWallet,
 } from "@/lib/bot/users"
+import { inspectSignedExternalMessage } from "@/lib/wallet/ton"
 import {
   claimSummary,
   createPendingTipClaim,
@@ -454,6 +455,10 @@ export async function markExternalTipPaymentSubmitted(params: {
     status: "sending",
     error: null,
   })
+  if (updatedPayment.provider === "stonfi") {
+    const refreshed = await refreshStonfiExternalPayment(updatedPayment)
+    return { tip: refreshed.tip ?? tip, payment: refreshed.payment }
+  }
   return { tip: (await getTipById(tip.id)) ?? tip, payment: updatedPayment }
 }
 
@@ -486,6 +491,40 @@ export async function applyTonPayTransferResult(
   await updateTipStatus(payment.tip_id, tipPatch)
 
   return { payment: updatedPayment, transfer, tip: await getTipById(payment.tip_id) }
+}
+
+export async function refreshStonfiExternalPayment(payment: TgExternalTipPayment) {
+  if (payment.provider !== "stonfi") {
+    return { payment, tip: await getTipById(payment.tip_id) }
+  }
+  if (payment.status === "sent" || payment.status === "failed") {
+    return { payment, tip: await getTipById(payment.tip_id) }
+  }
+  if (!payment.boc) {
+    return { payment, tip: await getTipById(payment.tip_id) }
+  }
+
+  const result = await inspectSignedExternalMessage({
+    senderAddress: payment.sender_address,
+    boc: payment.boc,
+  })
+
+  if (result.status === "pending") {
+    return { payment, tip: await getTipById(payment.tip_id) }
+  }
+
+  const success = result.status === "success"
+  const updatedPayment = await updateExternalTipPayment(payment.id, {
+    status: success ? "sent" : "failed",
+    txHash: result.txHash,
+    error: success ? null : result.error ?? "STON.fi wallet transaction failed.",
+  })
+  await updateTipStatus(payment.tip_id, success
+    ? { status: "sent", txHash: result.txHash, error: null }
+    : { status: "failed", txHash: result.txHash, error: result.error ?? "STON.fi wallet transaction failed." },
+  )
+
+  return { payment: updatedPayment, tip: await getTipById(payment.tip_id) }
 }
 
 export function externalPaymentSummary(payment: TgExternalTipPayment) {

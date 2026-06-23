@@ -14,7 +14,7 @@
 import "server-only"
 import { mnemonicNew, mnemonicToWalletKey } from "@ton/crypto"
 import { WalletContractV4, TonClient, internal, SendMode } from "@ton/ton"
-import { Address, beginCell, external, storeMessage, toNano, type Cell } from "@ton/core"
+import { Address, beginCell, Cell, external, loadMessage, storeMessage, toNano, type Cell as TonCell, type Message } from "@ton/core"
 
 const ENDPOINTS = {
   mainnet: "https://toncenter.com/api/v2/jsonRPC",
@@ -177,6 +177,130 @@ export async function getJettonWalletAddress(userAddress: string, jettonMinterAd
   }
 }
 
+function transactionSucceeded(tx: Awaited<ReturnType<TonClient["getTransactions"]>>[number]) {
+  const description = tx.description
+  if (
+    description.type === "generic" ||
+    description.type === "tick-tock" ||
+    description.type === "split-prepare" ||
+    description.type === "merge-install"
+  ) {
+    const computeOk =
+      description.computePhase.type === "vm"
+        ? description.computePhase.success && description.computePhase.exitCode === 0
+        : false
+    const actionOk = description.actionPhase ? description.actionPhase.success : true
+    return computeOk && actionOk && !description.aborted
+  }
+  return false
+}
+
+function transactionFailureReason(tx: Awaited<ReturnType<TonClient["getTransactions"]>>[number]) {
+  const description = tx.description
+  if (
+    description.type === "generic" ||
+    description.type === "tick-tock" ||
+    description.type === "split-prepare" ||
+    description.type === "merge-install"
+  ) {
+    if (description.aborted) return "Wallet transaction aborted."
+    if (description.computePhase.type === "skipped") {
+      return `Wallet transaction compute skipped: ${description.computePhase.reason}.`
+    }
+    if (!description.computePhase.success || description.computePhase.exitCode !== 0) {
+      return `Wallet transaction failed with exit code ${description.computePhase.exitCode}.`
+    }
+    if (description.actionPhase && !description.actionPhase.success) {
+      return `Wallet action phase failed with result code ${description.actionPhase.resultCode}.`
+    }
+  }
+  return "Wallet transaction failed."
+}
+
+function signedBocHashCandidates(boc: string) {
+  const normalized = boc.trim()
+  const cells = Cell.fromBoc(Buffer.from(normalized, "base64"))
+  if (!cells.length) throw new Error("Signed transaction BOC is invalid.")
+  const root = cells[0]
+  const candidates = new Set<string>([
+    root.hash().toString("hex"),
+    root.hash().toString("base64"),
+  ])
+  try {
+    const message = loadMessage(root.beginParse())
+    candidates.add(message.body.hash().toString("hex"))
+    candidates.add(message.body.hash().toString("base64"))
+  } catch {
+    // Some wallets return only the external message body, not the full message.
+  }
+  candidates.delete("")
+  return { root, candidates }
+}
+
+function messageMatchesBoc(
+  message: Message,
+  candidates: Set<string>,
+) {
+  const messageHash = beginCell().store(storeMessage(message)).endCell().hash()
+  return (
+    candidates.has(message.body.hash().toString("hex")) ||
+    candidates.has(message.body.hash().toString("base64")) ||
+    candidates.has(messageHash.toString("hex")) ||
+    candidates.has(messageHash.toString("base64"))
+  )
+}
+
+export async function inspectSignedExternalMessage(params: {
+  senderAddress: string
+  boc: string
+  limit?: number
+}) {
+  const client = getTonClient()
+  try {
+    const { root, candidates } = signedBocHashCandidates(params.boc)
+    candidates.add(root.hash().toString("hex"))
+    candidates.add(root.hash().toString("base64"))
+
+    const txs = await withRateLimitRetry(() =>
+      client.getTransactions(Address.parse(params.senderAddress), {
+        limit: params.limit ?? 20,
+        archival: false,
+      }),
+    )
+
+    const matched = txs.find((tx) => {
+      const inMessage = tx.inMessage
+      if (!inMessage || inMessage.info.type !== "external-in") return false
+      return messageMatchesBoc(inMessage, candidates)
+    })
+
+    if (!matched) {
+      return {
+        status: "pending" as const,
+        txHash: null,
+        error: null,
+      }
+    }
+
+    const txHash = matched.hash().toString("hex")
+    if (transactionSucceeded(matched)) {
+      return {
+        status: "success" as const,
+        txHash,
+        error: null,
+      }
+    }
+
+    return {
+      status: "failed" as const,
+      txHash,
+      error: transactionFailureReason(matched),
+    }
+  } catch (err) {
+    throw mapTonRpcError(err, "signed transaction lookup")
+  }
+}
+
 /**
  * Send an arbitrary message body (e.g. a STON.fi swap message) to a target contract.
  * Returns the hash of the external message we broadcast.
@@ -185,7 +309,7 @@ export async function sendInternalMessage(params: {
   mnemonic: string
   to: Address | string
   value: bigint
-  body?: Cell
+  body?: TonCell
   bounce?: boolean
 }) {
   try {
