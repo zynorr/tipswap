@@ -24,6 +24,7 @@ import {
   getManagedWallet,
   setActiveWallet,
   findUserByUsername,
+  findPendingTipClaimInvite,
   getActiveWallet,
   getTipById,
   getTipsByBatchId,
@@ -1178,6 +1179,27 @@ export function getBot(): Bot {
           normalizeUsername(tgUser.username) === normalizeUsername(username)
         ) {
           await ctx.reply("You cannot tip yourself.")
+          return
+        }
+        const existingClaim = await findPendingTipClaimInvite({
+          senderUserId: sender.id,
+          targetUsername: username,
+          offerToken: offerToken.symbol,
+          askToken: askToken.symbol,
+          askAmount: parsed.amount,
+        })
+        if (existingClaim) {
+          if (parsed.recipientUsernames.length > 1) {
+            await ctx.reply(
+              `@${username} still has an open claim link. Claim links currently support one pending recipient at a time; resend a single-recipient /tip for @${username} to share it again.`,
+            )
+            return
+          }
+
+          await ctx.reply(claimInviteText(existingClaim), {
+            parse_mode: "HTML",
+            reply_markup: claimShareKeyboard(existingClaim),
+          })
           return
         }
         const recipient = await findUserByUsername(username)

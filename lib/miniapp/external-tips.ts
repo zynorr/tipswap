@@ -12,6 +12,7 @@ import {
   createExternalTipPayment,
   createTipQuote,
   findUserByUsername,
+  findPendingTipClaimInvite,
   getActiveWallet,
   getExternalTipPaymentByReference,
   getExternalTipPaymentByTipId,
@@ -131,6 +132,17 @@ export async function prepareExternalTipPayment(params: {
   }
   if (normalizeUsername(params.senderTelegramUsername) === username) {
     throw new Error("You cannot tip yourself.")
+  }
+
+  const existingClaim = await findPendingTipClaimInvite({
+    senderUserId: params.sender.id,
+    targetUsername: username,
+    offerToken: offer.symbol,
+    askToken: resolveReceiveTokenForRecipient(params.ask).symbol,
+    askAmount: params.amount,
+  })
+  if (existingClaim) {
+    return { type: "claim" as const, claim: existingClaim }
   }
 
   const recipientUser = await findUserByUsername(username)

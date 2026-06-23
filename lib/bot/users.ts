@@ -578,6 +578,33 @@ export async function createTipClaimInvite(input: {
   return data as unknown as TgTipClaim
 }
 
+export async function findPendingTipClaimInvite(input: {
+  senderUserId: string
+  targetUsername: string
+  offerToken: string
+  askToken: string
+  askAmount: string
+}) {
+  const targetUsername = input.targetUsername.replace(/^@/, "").trim().toLowerCase()
+  const supabase = adminClient()
+  const { data, error } = await supabase
+    .from("tg_tip_claims")
+    .select("*")
+    .eq("sender_user_id", input.senderUserId)
+    .eq("target_username", targetUsername)
+    .eq("offer_token", input.offerToken)
+    .eq("ask_token", input.askToken)
+    .eq("ask_amount", input.askAmount)
+    .eq("status", "pending")
+    .gt("expires_at", new Date().toISOString())
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (error) throw error
+  return data as unknown as TgTipClaim | null
+}
+
 export async function getTipClaimByCode(code: string) {
   const supabase = adminClient()
   const { data, error } = await supabase

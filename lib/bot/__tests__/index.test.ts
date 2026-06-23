@@ -78,6 +78,7 @@ vi.mock("../users", () => ({
   setActiveWallet: vi.fn(),
   updateUserPreferences: vi.fn(),
   findUserByUsername: vi.fn(),
+  findPendingTipClaimInvite: vi.fn(),
   getActiveWallet: vi.fn(),
   getTipById: vi.fn(),
   getTipsByBatchId: vi.fn(),
@@ -107,6 +108,7 @@ import {
   setActiveWallet,
   updateUserPreferences,
   findUserByUsername,
+  findPendingTipClaimInvite,
   getActiveWallet,
   getTipById,
   getTipsByBatchId,
@@ -136,6 +138,7 @@ const mockGetManagedWallet = vi.mocked(getManagedWallet)
 const mockSetActiveWallet = vi.mocked(setActiveWallet)
 const mockUpdateUserPreferences = vi.mocked(updateUserPreferences)
 const mockFindUserByUsername = vi.mocked(findUserByUsername)
+const mockFindPendingTipClaimInvite = vi.mocked(findPendingTipClaimInvite)
 const mockGetActiveWallet = vi.mocked(getActiveWallet)
 const mockGetTipById = vi.mocked(getTipById)
 const mockGetTipsByBatchId = vi.mocked(getTipsByBatchId)
@@ -758,6 +761,7 @@ describe("/tip — quote flow", () => {
       created: false,
     })
     mockFindUserByUsername.mockResolvedValue(recipientUser)
+    mockFindPendingTipClaimInvite.mockResolvedValue(null)
     mockGetActiveWallet.mockResolvedValue(recipientWallet)
     mockQuoteTipSwap.mockResolvedValue({
       offerSymbol: "TON",
@@ -959,6 +963,31 @@ describe("/tip — quote flow", () => {
       }),
     )
     expect(mockQuoteTipSwap).not.toHaveBeenCalled()
+  })
+
+  it("resends an existing pending claim even after the receiver opened the miniapp", async () => {
+    mockFindPendingTipClaimInvite.mockResolvedValue(claimRow)
+
+    const ctx = makeCtx({ command: "tip", argsText: "5 USDT from TON @newuser" })
+    await handler(ctx)
+
+    expect(mockFindUserByUsername).not.toHaveBeenCalled()
+    expect(mockCreateTipClaimInvite).not.toHaveBeenCalled()
+    expect(mockQuoteTipSwap).not.toHaveBeenCalled()
+    expect(ctx.reply).toHaveBeenCalledWith(
+      expect.stringContaining("https://t.me/tipswapbot?start=claim_claimcode123"),
+      expect.objectContaining({
+        parse_mode: "HTML",
+        reply_markup: expect.objectContaining({
+          buttons: expect.arrayContaining([
+            expect.objectContaining({
+              text: "Share to Telegram",
+              url: expect.stringContaining("https://t.me/share/url"),
+            }),
+          ]),
+        }),
+      }),
+    )
   })
 
   it("does not create claim links inside multi-recipient batches", async () => {

@@ -8,6 +8,7 @@ import {
   createTipQuote,
   decryptMnemonic,
   findUserByUsername,
+  findPendingTipClaimInvite,
   getActiveWallet,
   getManagedWallet,
   getTipById,
@@ -129,6 +130,15 @@ export async function createPendingTipClaim(params: {
   askToken: string
   askAmount: string
 }) {
+  const existing = await findPendingTipClaimInvite({
+    senderUserId: params.sender.id,
+    targetUsername: params.targetUsername,
+    offerToken: params.offerToken,
+    askToken: params.askToken,
+    askAmount: params.askAmount,
+  })
+  if (existing) return existing
+
   return createTipClaimInvite({
     code: newClaimCode(),
     senderUserId: params.sender.id,
@@ -197,6 +207,17 @@ export async function prepareSingleRecipientTip(params: {
   }
   if (normalizeUsername(params.senderTelegramUsername) === username) {
     throw new Error("You cannot tip yourself.")
+  }
+
+  const existingClaim = await findPendingTipClaimInvite({
+    senderUserId: params.sender.id,
+    targetUsername: username,
+    offerToken: offerToken.symbol,
+    askToken: resolveReceiveTokenForRecipient(params.ask).symbol,
+    askAmount: params.amount,
+  })
+  if (existingClaim) {
+    return { type: "claim" as const, claim: existingClaim }
   }
 
   const recipientUser = await findUserByUsername(username)
