@@ -335,6 +335,19 @@ function claimInviteText(claim: TgTipClaim) {
   ].filter(Boolean).join("\n")
 }
 
+function claimShareText(claim: TgTipClaim) {
+  return [
+    `@${claim.target_username}, you have a ${claim.ask_amount} ${claim.ask_token} tip waiting on TipSwap.`,
+    "Open this TipSwap claim link to choose your wallet and claim it.",
+  ].join("\n")
+}
+
+function claimShareKeyboard(claim: TgTipClaim) {
+  const link = miniAppUrl(`/miniapp?claim=${encodeURIComponent(claim.code)}`) ?? claimLink(claim.code)
+  const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(claimShareText(claim))}`
+  return new InlineKeyboard().url("Share to Telegram", shareUrl)
+}
+
 async function failClaim(claim: TgTipClaim, err: unknown) {
   const msg = (err as Error).message ?? String(err)
   await updateTipClaimStatus(claim.id, {
@@ -1183,7 +1196,10 @@ export function getBot(): Bot {
             askToken: askToken.symbol,
             askAmount: parsed.amount,
           })
-          await ctx.reply(claimInviteText(claim), { parse_mode: "HTML" })
+          await ctx.reply(claimInviteText(claim), {
+            parse_mode: "HTML",
+            reply_markup: claimShareKeyboard(claim),
+          })
           return
         }
         if (recipient.id === sender.id || recipient.tg_id === tgUser.id) {

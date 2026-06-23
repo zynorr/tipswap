@@ -206,9 +206,13 @@ vi.mock("grammy", () => {
       catch() {}
     },
     InlineKeyboard: class MockInlineKeyboard {
-      buttons: Array<{ text: string; data?: string; web_app?: { url: string } }> = []
+      buttons: Array<{ text: string; data?: string; url?: string; web_app?: { url: string } }> = []
       text(text: string, data: string) {
         this.buttons.push({ text, data })
+        return this
+      }
+      url(text: string, url: string) {
+        this.buttons.push({ text, url })
         return this
       }
       webApp(text: string, url: string) {
@@ -942,7 +946,17 @@ describe("/tip — quote flow", () => {
     )
     expect(ctx.reply).toHaveBeenCalledWith(
       expect.stringContaining("https://t.me/tipswapbot?start=claim_claimcode123"),
-      expect.objectContaining({ parse_mode: "HTML" }),
+      expect.objectContaining({
+        parse_mode: "HTML",
+        reply_markup: expect.objectContaining({
+          buttons: expect.arrayContaining([
+            expect.objectContaining({
+              text: "Share to Telegram",
+              url: expect.stringContaining("https://t.me/share/url"),
+            }),
+          ]),
+        }),
+      }),
     )
     expect(mockQuoteTipSwap).not.toHaveBeenCalled()
   })
