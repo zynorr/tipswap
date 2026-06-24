@@ -1127,6 +1127,7 @@ function MiniAppInner() {
     setSendStage("wallet")
     setSendDetail(result.provider === "tonpay" ? "Approve the TON Pay transfer in your wallet." : "Approve the STON.fi swap in your wallet.")
     setError("")
+    let walletSigned = false
     try {
       const txResult = await tonConnectUI.sendTransaction({
         messages: [result.message],
@@ -1134,6 +1135,11 @@ function MiniAppInner() {
         from: tonAddress,
       })
 
+      walletSigned = true
+      setQuote(null)
+      setSignTipId("")
+      setLoadedSignTipKey("")
+      setTab("wallet")
       setSendStage("submitting")
       setSendDetail("Wallet signed. Recording the transaction in TipSwap.")
       const submitted = await api<ExternalSubmitResponse>(
@@ -1148,16 +1154,23 @@ function MiniAppInner() {
       if (result.provider === "tonpay" && submitted.payment.reference) {
         setSendStage("polling")
         setSendDetail("Payment submitted. Waiting for TON Pay to index the transfer.")
-        const status = await pollTonPay(submitted.payment.reference)
-        if (status.transfer.status === "success") {
-          setMessage("Tip confirmed.")
+        try {
+          const status = await pollTonPay(submitted.payment.reference)
+          if (status.transfer.status === "success") {
+            setMessage("Tip confirmed.")
+            setSendStage("success")
+            setSendDetail("The transfer is confirmed and history has been refreshed.")
+          } else {
+            const nextError = status.transfer.errorMessage ?? "Payment failed."
+            setMessage(nextError)
+            setSendStage("failed")
+            setSendDetail(nextError)
+          }
+        } catch (err) {
+          const nextMessage = (err as Error).message
+          setMessage(nextMessage)
           setSendStage("success")
-          setSendDetail("The transfer is confirmed and history has been refreshed.")
-        } else {
-          const nextError = status.transfer.errorMessage ?? "Payment failed."
-          setMessage(nextError)
-          setSendStage("failed")
-          setSendDetail(nextError)
+          setSendDetail("Your wallet signed and TipSwap recorded the payment. Activity will keep checking for final confirmation.")
         }
       } else {
         setMessage("Swap submitted. Activity will update after chain confirmation.")
@@ -1165,13 +1178,16 @@ function MiniAppInner() {
         setSendDetail("The signed swap was submitted. Refresh Activity in a few seconds to confirm the final result.")
       }
 
-      setQuote(null)
       await refresh()
     } catch (err) {
       const nextError = (err as Error).message
       setError(nextError)
       setSendStage("failed")
-      setSendDetail(nextError)
+      setSendDetail(
+        walletSigned
+          ? `Your wallet signed the transaction, but TipSwap could not finish recording it: ${nextError}`
+          : nextError,
+      )
     } finally {
       // Stage carries the result state.
     }

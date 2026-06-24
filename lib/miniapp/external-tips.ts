@@ -89,14 +89,17 @@ function sameAddress(left: string, right: string) {
   return assertAddress(left) === assertAddress(right)
 }
 
+function decimalAmountMatches(left: string, right: string, decimals: number) {
+  return toRawAmount(left, decimals) === toRawAmount(right, decimals)
+}
+
 function validateTonPayTransfer(payment: TgExternalTipPayment, transfer: CompletedTonPayTransferInfo) {
   if (payment.provider !== "tonpay") return "Payment provider mismatch."
   if (!sameAddress(payment.sender_address, transfer.senderAddr)) return "Sender address mismatch."
   if (!sameAddress(payment.recipient_address, transfer.recipientAddr)) return "Recipient address mismatch."
 
   const token = resolveToken(payment.asset)
-  const expectedRawAmount = toRawAmount(payment.amount, token.decimals).toString()
-  if (transfer.rawAmount !== expectedRawAmount) return "Payment amount mismatch."
+  if (!decimalAmountMatches(payment.amount, transfer.amount, token.decimals)) return "Payment amount mismatch."
 
   const expectedAsset = tonPayAsset(token.symbol, token.mainnet)
   const tickerMatches = transfer.assetTicker?.toUpperCase() === payment.asset.toUpperCase()
