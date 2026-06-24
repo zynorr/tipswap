@@ -187,30 +187,6 @@ Tx hash: 6b454c81b57841720cee6daba2a53507efc4b342bac29b94f83f03c214920e96
 Explorer: https://tonscan.org/tx/6b454c81b57841720cee6daba2a53507efc4b342bac29b94f83f03c214920e96
 ```
 
-Cleanup sweep after deleting the test receiver:
-
-```text
-Source: @zynorlawes managed wallet
-Destination: @maadg11 external wallet
-Amount planned: 0.009319178 TON
-Tx hash: ffcedb2e97ac8a965f2af52f6f9d7f2e2cf367df75687d2de72860219b6be807
-Explorer: https://tonscan.org/tx/ffcedb2e97ac8a965f2af52f6f9d7f2e2cf367df75687d2de72860219b6be807
-```
-
-Additional recent setup and recovery transactions used during external-wallet testing:
-
-```text
-Funded @maadg11 external wallet from managed wallet
-Amount: 0.3 TON
-Tx hash: b571266511cbff20ec24a7f413de7dbbddd255260acd063816ebe5c12bfe4ba0
-Explorer: https://tonscan.org/tx/b571266511cbff20ec24a7f413de7dbbddd255260acd063816ebe5c12bfe4ba0
-
-Recovered test TON from @mowsenia1 to @maadg11 external wallet
-Amount: 0.098201305 TON
-Tx hash: 2dd118ec4183000e974cd13ab9afc35f91acddf62db3d99312dc2762540399e8
-Explorer: https://tonscan.org/tx/2dd118ec4183000e974cd13ab9afc35f91acddf62db3d99312dc2762540399e8
-```
-
 ## External Wallet Result
 
 The captured screens demonstrate that the external-wallet claim-link flow works end to end:
