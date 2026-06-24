@@ -114,3 +114,110 @@ The captured screens demonstrate that the claim-link tip flow works end to end:
 4. Sender confirms the prepared claim.
 5. Receiver wallet balance updates.
 6. Sender and receiver activity pages show confirmed on-chain status with transaction evidence.
+
+## External Wallet Claim Flow Evidence
+
+Evidence captured on June 25, 2026.
+
+This section records the tested flow where the receiver chooses a wallet for a claim-link tip and the sender pays from a connected external wallet instead of a TipSwap managed wallet.
+
+### Flow Covered
+
+- Sender account: `@maadg11`
+- Receiver account: `@zynorlawes`
+- Network: TON Mainnet
+- Tip tested: `0.01 TON`
+- Sender wallet mode: external connected wallet
+- Sender wallet: `UQBTDh5GG4yKMiXAQSh1jIizosLjCfeUnltprxb2y8wOcxVv`
+- Receiver wallet: `UQBl9agug3K4QI9T0UudjmvRNl4HAXWN5rGxlwDnEIWKM_DG`
+- Payment provider: TON Pay direct transfer
+- TON Pay reference: `0x90f49f09968d4d6550e8091d0c54ed4df5394ce6`
+- Tip id: `e7a80122-7409-4f25-8dac-b3788a64720a`
+- Transaction hash: `6b454c81b57841720cee6daba2a53507efc4b342bac29b94f83f03c214920e96`
+- Explorer: <https://tonscan.org/tx/6b454c81b57841720cee6daba2a53507efc4b342bac29b94f83f03c214920e96>
+
+### 6. Sender Receives A Sign Request After Receiver Chooses A Wallet
+
+After the receiver opens the claim link and selects a receiving wallet, the bot sends the sender a claim-ready message. The message shows the receiver, amount, route, and gives the sender an **Open Mini App to sign** action plus a cancel option.
+
+![External wallet sender sign request](assets/tipswap-flow/external-wallet-sender-sign-request.png)
+
+What this proves:
+
+- The receiver does not initiate the payment.
+- The receiver prepares the claim by choosing a receiving wallet.
+- The sender remains the payer and must explicitly open the Mini App to sign.
+- The sender can cancel before signing.
+
+### 7. Sender Signs From Their External Wallet
+
+The Mini App opens the connected wallet confirmation screen. The wallet shows TipSwap as the requesting app, the sender account, the receiver address, and the `0.01 TON` transfer amount before the sender confirms.
+
+![External wallet confirmation screen](assets/tipswap-flow/external-wallet-confirmation-screen.png)
+
+What this proves:
+
+- The payment is non-custodial for external-wallet senders.
+- The sender reviews and signs the transfer in their own wallet.
+- The transfer uses the connected wallet path instead of a managed TipSwap wallet.
+- The visible amount matches the tested tip amount.
+
+### 8. Mini App Returns To Dashboard After Payment
+
+After the sender signs, the Mini App returns to the wallet dashboard and shows `Tip confirmed`. The active wallet is shown as `Connected wallet`, confirming that the sender used the external-wallet flow.
+
+![External wallet post-payment dashboard](assets/tipswap-flow/external-wallet-post-payment-dashboard.png)
+
+What this proves:
+
+- The post-signing UX returns to the dashboard instead of leaving the sender on the signing screen.
+- The Mini App confirms the successful tip state.
+- The active wallet mode remains external.
+- Activity can be used for persistent confirmation after the wallet signature flow.
+
+### External Wallet Test Transactions
+
+Main external-wallet payment:
+
+```text
+TON Pay reference: 0x90f49f09968d4d6550e8091d0c54ed4df5394ce6
+Body hash: 9df594841617861bac79f3c38e91836e173c1bbec54668ce1b3c174ae86bb9d1
+Trace id: f9f4adf67347cef104e1d7fd33b84b840ad588bc30be0729609960b734cd518c
+Tx hash: 6b454c81b57841720cee6daba2a53507efc4b342bac29b94f83f03c214920e96
+Explorer: https://tonscan.org/tx/6b454c81b57841720cee6daba2a53507efc4b342bac29b94f83f03c214920e96
+```
+
+Cleanup sweep after deleting the test receiver:
+
+```text
+Source: @zynorlawes managed wallet
+Destination: @maadg11 external wallet
+Amount planned: 0.009319178 TON
+Tx hash: ffcedb2e97ac8a965f2af52f6f9d7f2e2cf367df75687d2de72860219b6be807
+Explorer: https://tonscan.org/tx/ffcedb2e97ac8a965f2af52f6f9d7f2e2cf367df75687d2de72860219b6be807
+```
+
+Additional recent setup and recovery transactions used during external-wallet testing:
+
+```text
+Funded @maadg11 external wallet from managed wallet
+Amount: 0.3 TON
+Tx hash: b571266511cbff20ec24a7f413de7dbbddd255260acd063816ebe5c12bfe4ba0
+Explorer: https://tonscan.org/tx/b571266511cbff20ec24a7f413de7dbbddd255260acd063816ebe5c12bfe4ba0
+
+Recovered test TON from @mowsenia1 to @maadg11 external wallet
+Amount: 0.098201305 TON
+Tx hash: 2dd118ec4183000e974cd13ab9afc35f91acddf62db3d99312dc2762540399e8
+Explorer: https://tonscan.org/tx/2dd118ec4183000e974cd13ab9afc35f91acddf62db3d99312dc2762540399e8
+```
+
+## External Wallet Result
+
+The captured screens demonstrate that the external-wallet claim-link flow works end to end:
+
+1. Receiver opens the claim link and chooses a receiving wallet.
+2. TipSwap notifies the sender that the claim is ready.
+3. Sender opens the Mini App and signs from their connected external wallet.
+4. The wallet sends the TON Pay direct transfer on-chain.
+5. TipSwap records the payment and returns the sender to the dashboard.
+6. The transaction can be verified on-chain using the recorded transaction hash.
