@@ -52,7 +52,7 @@ export function claimConfirmationReplyMarkup(tipId: string, senderWallet: TgWall
   return {
     inline_keyboard: signUrl
       ? [
-          [{ text: "Open Mini App to sign", url: signUrl }],
+          [{ text: "Open Mini App to sign", web_app: { url: signUrl } }],
           [{ text: "Cancel", callback_data: `tip:cancel:${tipId}` }],
         ]
       : [[

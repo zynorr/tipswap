@@ -764,7 +764,7 @@ function MiniAppInner() {
           setSignTipId(tipId)
           if (code) setTab("claim")
           if (tipId) setTab("send")
-          if (code) setPendingClaimChecked(true)
+          if (code || tipId) setPendingClaimChecked(true)
           return
         }
 
@@ -1076,7 +1076,7 @@ function MiniAppInner() {
   useEffect(() => {
     if (!signTipId || !initData || !me) return
     if (quote?.type === "external" && quote.tip.id === signTipId) return
-    if (!["idle", "success"].includes(sendStage)) return
+    if (!["idle", "success", "wallet", "failed"].includes(sendStage)) return
     const key = `${signTipId}:${me.wallet?.address ?? "none"}:${tonAddress || "disconnected"}`
     if (loadedSignTipKey === key) return
 
