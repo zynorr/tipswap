@@ -149,7 +149,73 @@ What this proves:
 - The sender remains the payer and must explicitly open the Mini App to sign.
 - The sender can cancel before signing.
 
-### 7. Sender Signs From Their External Wallet
+### 7. Receiver-Side Claim Walkthrough Screens
+
+The next screenshots were captured in order during recent receiver-side claim tests. They show the same claim-link UX states used by the external-wallet flow: claim delivery, Telegram launch fallback, wallet choice, claim preparation, pending activity, wallet update, and final activity confirmation. Some visible receiver handles and amounts differ between screenshots because they were captured across multiple test accounts.
+
+### 8. Receiver Gets The Claim Link In Telegram
+
+The receiver gets a Telegram message with the TipSwap claim link. The message states the amount waiting, names the receiver, and tells them to open the claim link to choose a wallet.
+
+![Receiver claim link message](assets/tipswap-flow/receiver-claim-01-claim-link.jpeg)
+
+What this proves:
+
+- The receiver can be reached with a shareable claim link.
+- The claim link carries the pending tip into the Mini App flow.
+- The receiver is told that they must choose a wallet before the tip can complete.
+
+### 9. Claim Link Handles External Browser Fallback
+
+If the claim link opens in a normal browser first, TipSwap shows the Telegram authentication fallback with an **Open @tipswapperbot** button. Telegram also shows its launch page for the Mini App.
+
+![Receiver open in Telegram fallback](assets/tipswap-flow/receiver-claim-02-open-in-telegram.jpeg)
+
+![Receiver Telegram launch page](assets/tipswap-flow/receiver-claim-03-telegram-launch-page.jpeg)
+
+What this proves:
+
+- The claim link does not expose the Mini App to unauthenticated browser sessions.
+- The user gets a clear route back into Telegram when the link is opened outside the Mini App context.
+- Telegram can launch the TipSwap Mini App from the claim link.
+
+### 10. Receiver Chooses A Managed Or External Wallet
+
+Inside the Mini App, the receiver sees the pending `0.3 TON` claim and can connect their own wallet, paste a receiving address, or choose a TipSwap managed wallet before preparing the claim.
+
+![Receiver wallet choice screen](assets/tipswap-flow/receiver-claim-04-wallet-choice.jpeg)
+
+What this proves:
+
+- The receiver chooses how they want to receive the tip.
+- TipSwap does not force a managed wallet when the receiver opens the claim.
+- The claim cannot be prepared until a receiving wallet is selected.
+
+### 11. Receiver Prepares The Claim For Sender Confirmation
+
+After choosing a wallet, the receiver prepares the claim. The Mini App tells the receiver that the sender now has confirm/cancel buttons in Telegram and that the screen will update automatically.
+
+![Receiver claim prepared screen](assets/tipswap-flow/receiver-claim-05-claim-prepared.jpeg)
+
+What this proves:
+
+- The receiver does not send the payment.
+- Preparing the claim only routes the selected receiving wallet back to the sender.
+- The sender remains in control of the final payment confirmation.
+
+### 12. Receiver Activity Shows The Claim Waiting For Sender
+
+The receiver activity page shows the tip as `Ready`, with a `Ready to send` state and the selected route. This records the intermediate state before the sender confirms.
+
+![Receiver activity ready screen](assets/tipswap-flow/receiver-claim-06-activity-ready.jpeg)
+
+What this proves:
+
+- The receiver has a persistent pending record after preparing the claim.
+- Activity distinguishes a ready claim from a completed payment.
+- The UI gives the receiver a clear status while waiting for the sender.
+
+### 13. Sender Signs From Their External Wallet
 
 The Mini App opens the connected wallet confirmation screen. The wallet shows TipSwap as the requesting app, the sender account, the receiver address, and the `0.01 TON` transfer amount before the sender confirms.
 
@@ -162,7 +228,7 @@ What this proves:
 - The transfer uses the connected wallet path instead of a managed TipSwap wallet.
 - The visible amount matches the tested tip amount.
 
-### 8. Mini App Returns To Dashboard After Payment
+### 14. Mini App Returns To Dashboard After Payment
 
 After the sender signs, the Mini App returns to the wallet dashboard and shows `Tip confirmed`. The active wallet is shown as `Connected wallet`, confirming that the sender used the external-wallet flow.
 
@@ -174,6 +240,30 @@ What this proves:
 - The Mini App confirms the successful tip state.
 - The active wallet mode remains external.
 - Activity can be used for persistent confirmation after the wallet signature flow.
+
+### 15. Receiver Wallet Updates After Sender Confirms
+
+After the sender confirms, the receiver wallet screen shows `Tip received: 0.3 TON` and the managed TipSwap wallet balance reflects the received funds.
+
+![Receiver wallet updated screen](assets/tipswap-flow/receiver-claim-07-wallet-updated.jpeg)
+
+What this proves:
+
+- The receiver sees a success state after the sender pays.
+- The wallet balance updates after confirmation.
+- The displayed received amount matches the claim amount in this receiver-side test.
+
+### 16. Receiver Activity Shows Confirmed TON Pay Result
+
+The receiver activity page shows the completed tip as `Confirmed`, includes the `TONPAY` provider label, and displays the transaction, reference, trace, body hash, and explorer action.
+
+![Receiver confirmed activity screen](assets/tipswap-flow/receiver-claim-08-activity-confirmed.jpeg)
+
+What this proves:
+
+- The receiver gets a final, persistent activity record.
+- TON Pay transfers are labeled clearly in activity.
+- The completed payment has enough identifiers for on-chain and provider-level verification.
 
 ### External Wallet Test Transactions
 
