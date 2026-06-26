@@ -823,6 +823,15 @@ function MiniAppInner() {
   }, [])
 
   useEffect(() => {
+    if (!message || error) return
+    const currentMessage = message
+    const timeout = window.setTimeout(() => {
+      setMessage((value) => value === currentMessage ? "" : value)
+    }, 6000)
+    return () => window.clearTimeout(timeout)
+  }, [error, message])
+
+  useEffect(() => {
     if (!initData || claimCode || signTipId || pendingClaimChecked) return
     let cancelled = false
 
@@ -1137,9 +1146,10 @@ function MiniAppInner() {
     try {
       await api(`/api/miniapp/tips/${tipId}/confirm`, initData, { method: "POST", body: "{}" })
       setMessage("Tip sent.")
-      setSendStage("success")
-      setSendDetail("The tip was confirmed and history has been refreshed.")
       setQuote(null)
+      setTab("wallet")
+      setSendStage("idle")
+      setSendDetail("")
       await refresh()
     } catch (err) {
       if (handleSessionError(err)) return
@@ -1205,8 +1215,8 @@ function MiniAppInner() {
           const status = await pollTonPay(submitted.payment.reference)
           if (status.transfer.status === "success") {
             setMessage("Tip confirmed.")
-            setSendStage("success")
-            setSendDetail("The transfer is confirmed and history has been refreshed.")
+            setSendStage("idle")
+            setSendDetail("")
           } else {
             const nextError = status.transfer.errorMessage ?? "Payment failed."
             setMessage(nextError)
@@ -1217,13 +1227,13 @@ function MiniAppInner() {
           if (handleSessionError(err)) throw err
           const nextMessage = (err as Error).message
           setMessage(nextMessage)
-          setSendStage("success")
-          setSendDetail("Your wallet signed and TipSwap recorded the payment. Activity will keep checking for final confirmation.")
+          setSendStage("idle")
+          setSendDetail("")
         }
       } else {
         setMessage("Swap submitted. Activity will update after chain confirmation.")
-        setSendStage("success")
-        setSendDetail("The signed swap was submitted. Refresh Activity in a few seconds to confirm the final result.")
+        setSendStage("idle")
+        setSendDetail("")
       }
 
       await refresh()
