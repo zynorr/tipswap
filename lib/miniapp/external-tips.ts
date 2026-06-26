@@ -41,6 +41,7 @@ import {
   resolveToken,
   toRawAmount,
 } from "@/lib/ston/swap"
+import { sendTelegramMessage } from "@/lib/telegram/bot-api"
 
 type TonPayChain = "mainnet" | "testnet"
 
@@ -83,6 +84,45 @@ function asNumberAmount(amount: string) {
 
 function externalTipComment(tip: TgTip) {
   return `TipSwap tip ${tip.id.slice(0, 8)}`
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+}
+
+async function notifyExternalTipRecipient(params: {
+  tip: TgTip
+  payment: TgExternalTipPayment
+}) {
+  const [recipient, sender] = await Promise.all([
+    getUserById(params.tip.recipient_user_id),
+    getUserById(params.tip.sender_user_id),
+  ])
+  if (!recipient) return
+
+  const amount = params.tip.expected_out ?? params.tip.ask_amount
+  const senderLabel = sender?.tg_username ? `@${sender.tg_username}` : "a TipSwap user"
+  const lines = [
+    "<b>🎁 You received a tip!</b>",
+    "",
+    `≈ <b>${escapeHtml(amount)} ${escapeHtml(params.tip.ask_token)}</b> from ${escapeHtml(senderLabel)}`,
+    `Sent to: <code>${escapeHtml(params.tip.recipient_address)}</code>`,
+    params.payment.tx_hash ? `Tx: <code>${escapeHtml(params.payment.tx_hash)}</code>` : "",
+  ].filter(Boolean)
+
+  try {
+    await sendTelegramMessage({
+      chatId: recipient.tg_id,
+      text: lines.join("\n"),
+      parseMode: "HTML",
+    })
+  } catch (err) {
+    console.warn("[tipswap] external tip recipient notification failed:", err)
+  }
 }
 
 function sameAddress(left: string, right: string) {
@@ -493,7 +533,12 @@ export async function applyTonPayTransferResult(
     : { status: "failed" as const, txHash: transfer.txHash, error: validationError ?? transfer.errorMessage ?? "Payment failed" }
   await updateTipStatus(payment.tip_id, tipPatch)
 
-  return { payment: updatedPayment, transfer, tip: await getTipById(payment.tip_id) }
+  const tip = await getTipById(payment.tip_id)
+  if (success && payment.status !== "sent" && tip) {
+    await notifyExternalTipRecipient({ tip, payment: updatedPayment })
+  }
+
+  return { payment: updatedPayment, transfer, tip }
 }
 
 export async function refreshStonfiExternalPayment(payment: TgExternalTipPayment) {
@@ -527,7 +572,12 @@ export async function refreshStonfiExternalPayment(payment: TgExternalTipPayment
     : { status: "failed", txHash: result.txHash, error: result.error ?? "STON.fi wallet transaction failed." },
   )
 
-  return { payment: updatedPayment, tip: await getTipById(payment.tip_id) }
+  const tip = await getTipById(payment.tip_id)
+  if (success && tip) {
+    await notifyExternalTipRecipient({ tip, payment: updatedPayment })
+  }
+
+  return { payment: updatedPayment, tip }
 }
 
 export function externalPaymentSummary(payment: TgExternalTipPayment) {
