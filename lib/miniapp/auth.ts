@@ -45,5 +45,13 @@ export async function requireMiniAppSession(req: Request): Promise<MiniAppSessio
 
 export function miniAppError(err: unknown, status = 400) {
   const message = (err as Error).message ?? String(err)
-  return Response.json({ ok: false, error: message }, { status })
+  const authExpired = message === "Telegram initData has expired"
+  const authInvalid = message.startsWith("Telegram initData")
+    || message.startsWith("Telegram auth_date")
+    || message.startsWith("Telegram user")
+  return Response.json({
+    ok: false,
+    error: message,
+    code: authExpired ? "TELEGRAM_INIT_DATA_EXPIRED" : authInvalid ? "TELEGRAM_INIT_DATA_INVALID" : "MINIAPP_ERROR",
+  }, { status: authInvalid ? 401 : status })
 }

@@ -50,6 +50,7 @@ Set these in Vercel for Production:
 | `TELEGRAM_BOT_USERNAME` | Bot username without `@`, e.g. `tipswapperbot` |
 | `NEXT_PUBLIC_TELEGRAM_BOT_USERNAME` | Same bot username, exposed to the Mini App for fallback links |
 | `TELEGRAM_WEBHOOK_SECRET` | Random 32+ character secret |
+| `TELEGRAM_INIT_DATA_MAX_AGE_SECONDS` | Optional; defaults to `604800` (7 days). Controls how long a Telegram Mini App session remains valid server-side |
 | `ADMIN_SETUP_TOKEN` | Random 32+ character admin token |
 | `WALLET_ENCRYPTION_KEY` | Random 32+ character encryption key |
 | `TON_API_KEY` | TONCenter API key |
@@ -62,6 +63,8 @@ Do not set a Postgres connection string as `NEXT_PUBLIC_SUPABASE_URL`.
 Do not rotate `WALLET_ENCRYPTION_KEY` after users create managed wallets. Existing wallet mnemonics depend on it.
 
 Mini App authentication uses the deployed `TELEGRAM_BOT_TOKEN` to verify Telegram `initData`. If the Mini App opens from `@tipswapperbot`, Vercel must use that exact bot's token. A token from an older bot will cause `Telegram initData hash is invalid`.
+
+Telegram `initData` also includes an `auth_date`. TipSwap accepts it for 7 days by default, then asks the user to reopen the Mini App from Telegram so Telegram can issue fresh signed session data.
 
 Generate strong secrets locally:
 

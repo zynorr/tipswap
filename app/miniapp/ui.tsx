@@ -222,6 +222,18 @@ const RECEIVE_OPTIONS = ["AUTO", ...TOKENS] as const
 const BOT_USERNAME = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME ?? "tipswapperbot"
 const TONSCAN_URL = "https://tonscan.org"
 
+class MiniAppApiError extends Error {
+  code?: string
+  status?: number
+
+  constructor(message: string, options: { code?: string; status?: number } = {}) {
+    super(message)
+    this.name = "MiniAppApiError"
+    this.code = options.code
+    this.status = options.status
+  }
+}
+
 function getInitData() {
   if (typeof window === "undefined") return ""
   const fromBridge = window.Telegram?.WebApp?.initData
@@ -351,8 +363,18 @@ async function api<T>(path: string, initData: string, init?: RequestInit): Promi
     },
   })
   const json = await res.json().catch(() => ({}))
-  if (!res.ok || !json.ok) throw new Error(json.error ?? "Request failed")
+  if (!res.ok || !json.ok) {
+    throw new MiniAppApiError(json.error ?? "Request failed", {
+      code: typeof json.code === "string" ? json.code : undefined,
+      status: res.status,
+    })
+  }
   return json as T
+}
+
+function isTelegramSessionError(err: unknown): err is MiniAppApiError {
+  return err instanceof MiniAppApiError
+    && (err.code === "TELEGRAM_INIT_DATA_EXPIRED" || err.code === "TELEGRAM_INIT_DATA_INVALID")
 }
 
 function shortAddress(address: string) {
@@ -699,6 +721,7 @@ function MiniAppInner() {
   const [history, setHistory] = useState<HistoryResponse | null>(null)
   const [message, setMessage] = useState("")
   const [error, setError] = useState("")
+  const [sessionExpired, setSessionExpired] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [pendingClaimChecked, setPendingClaimChecked] = useState(false)
   const [walletAction, setWalletAction] = useState<"connect" | "managed" | null>(null)
@@ -716,10 +739,27 @@ function MiniAppInner() {
   const [tonConnectUI] = useTonConnectUI()
 
   const authed = Boolean(initData)
-  const busy = refreshing || Boolean(walletAction) || !["idle", "quote-ready", "claim-ready", "success", "failed"].includes(sendStage)
+  const busy = sessionExpired || refreshing || Boolean(walletAction) || !["idle", "quote-ready", "claim-ready", "success", "failed"].includes(sendStage)
+
+  const handleSessionError = useCallback((err: unknown) => {
+    if (!isTelegramSessionError(err)) return false
+    const expired = err.code === "TELEGRAM_INIT_DATA_EXPIRED"
+    const nextMessage = expired
+      ? "Your Telegram Mini App session expired. Reopen TipSwap from Telegram to continue."
+      : "Telegram could not verify this Mini App session. Reopen TipSwap from Telegram to continue."
+    setSessionExpired(true)
+    setMessage("")
+    setError(nextMessage)
+    setSendStage("idle")
+    setSendDetail("")
+    setWalletAction(null)
+    setQuote(null)
+    return true
+  }, [])
 
   const refresh = useCallback(async () => {
     if (!initData) return
+    if (sessionExpired) return
     setRefreshing(true)
     setError("")
     try {
@@ -737,11 +777,12 @@ function MiniAppInner() {
       setBalances(nextBalances.balances)
       setHistory(nextHistory)
     } catch (err) {
+      if (handleSessionError(err)) return
       setError((err as Error).message)
     } finally {
       setRefreshing(false)
     }
-  }, [initData])
+  }, [handleSessionError, initData, sessionExpired])
 
   useEffect(() => {
     let attempts = 0
@@ -796,7 +837,7 @@ function MiniAppInner() {
         }
       })
       .catch((err) => {
-        if (!cancelled) setError((err as Error).message)
+        if (!cancelled && !handleSessionError(err)) setError((err as Error).message)
       })
       .finally(() => {
         if (!cancelled) setPendingClaimChecked(true)
@@ -805,7 +846,7 @@ function MiniAppInner() {
     return () => {
       cancelled = true
     }
-  }, [claimCode, initData, pendingClaimChecked, signTipId])
+  }, [claimCode, handleSessionError, initData, pendingClaimChecked, signTipId])
 
   useEffect(() => {
     if (!initData) return
@@ -827,6 +868,7 @@ function MiniAppInner() {
       setMessage("External wallet connected.")
       await refresh()
     } catch (err) {
+      if (handleSessionError(err)) return
       setError((err as Error).message)
     } finally {
       setWalletAction(null)
@@ -841,6 +883,7 @@ function MiniAppInner() {
       setMessage("Managed wallet active.")
       await refresh()
     } catch (err) {
+      if (handleSessionError(err)) return
       setError((err as Error).message)
     } finally {
       setWalletAction(null)
@@ -892,6 +935,7 @@ function MiniAppInner() {
       setActiveClaim({ claim: result.claim, tip: result.tip })
       await refresh()
     } catch (err) {
+      if (handleSessionError(err)) return
       const nextError = (err as Error).message
       setError(nextError)
       setSendStage("failed")
@@ -936,7 +980,7 @@ function MiniAppInner() {
           await refresh()
         }
       } catch (err) {
-        if (!cancelled) setError((err as Error).message)
+        if (!cancelled && !handleSessionError(err)) setError((err as Error).message)
       }
     }
 
@@ -946,7 +990,7 @@ function MiniAppInner() {
       cancelled = true
       window.clearInterval(interval)
     }
-  }, [activeClaim?.claim.code, initData, refresh])
+  }, [activeClaim?.claim.code, handleSessionError, initData, refresh])
 
   async function createQuote() {
     if (!me?.wallet) {
@@ -995,6 +1039,7 @@ function MiniAppInner() {
       }
       await refresh()
     } catch (err) {
+      if (handleSessionError(err)) return
       const nextError = (err as Error).message
       setError(nextError)
       setSendStage("failed")
@@ -1066,12 +1111,13 @@ function MiniAppInner() {
       setMessage("Claim payment ready for wallet signature.")
       await refresh()
     } catch (err) {
+      if (handleSessionError(err)) return
       const nextError = (err as Error).message
       setError(nextError)
       setSendStage("failed")
       setSendDetail(nextError)
     }
-  }, [initData, me, modal, refresh, tonAddress])
+  }, [handleSessionError, initData, me, modal, refresh, tonAddress])
 
   useEffect(() => {
     if (!signTipId || !initData || !me) return
@@ -1096,6 +1142,7 @@ function MiniAppInner() {
       setQuote(null)
       await refresh()
     } catch (err) {
+      if (handleSessionError(err)) return
       const nextError = (err as Error).message
       setError(nextError)
       setSendStage("failed")
@@ -1167,6 +1214,7 @@ function MiniAppInner() {
             setSendDetail(nextError)
           }
         } catch (err) {
+          if (handleSessionError(err)) throw err
           const nextMessage = (err as Error).message
           setMessage(nextMessage)
           setSendStage("success")
@@ -1180,6 +1228,7 @@ function MiniAppInner() {
 
       await refresh()
     } catch (err) {
+      if (handleSessionError(err)) return
       const nextError = (err as Error).message
       setError(nextError)
       setSendStage("failed")
@@ -1276,6 +1325,23 @@ function MiniAppInner() {
           <div className={cn("rounded-md border px-3 py-2 text-sm", error ? "border-destructive text-destructive" : "border-primary/40 text-primary")}>
             {error || message}
           </div>
+        )}
+
+        {sessionExpired && (
+          <section className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4">
+            <div className="flex items-start gap-3">
+              <AlertCircle className="mt-0.5 size-5 shrink-0 text-amber-600 dark:text-amber-300" />
+              <div>
+                <h2 className="font-semibold">Reopen TipSwap</h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Telegram refreshed your Mini App session. Open TipSwap again from Telegram, then retry the action.
+                </p>
+              </div>
+            </div>
+            <Button className="mt-4 w-full" asChild>
+              <a href={getTelegramOpenUrl()}>Open TipSwap in Telegram</a>
+            </Button>
+          </section>
         )}
 
         {showSendProgress && (

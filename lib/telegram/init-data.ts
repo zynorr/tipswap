@@ -17,7 +17,12 @@ export type ValidatedTelegramInitData = {
   startParam: string | null
 }
 
-const DEFAULT_MAX_AGE_SECONDS = 24 * 60 * 60
+const FALLBACK_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
+
+function defaultMaxAgeSeconds() {
+  const configured = Number(process.env.TELEGRAM_INIT_DATA_MAX_AGE_SECONDS)
+  return Number.isFinite(configured) && configured > 0 ? configured : FALLBACK_MAX_AGE_SECONDS
+}
 
 function parseUser(value: string | null) {
   if (!value) throw new Error("Telegram user is missing")
@@ -31,7 +36,7 @@ function parseUser(value: string | null) {
 export function validateTelegramInitData(
   initData: string,
   botToken = process.env.TELEGRAM_BOT_TOKEN,
-  maxAgeSeconds = DEFAULT_MAX_AGE_SECONDS,
+  maxAgeSeconds = defaultMaxAgeSeconds(),
 ): ValidatedTelegramInitData {
   if (!botToken) throw new Error("TELEGRAM_BOT_TOKEN is not set")
   if (!initData) throw new Error("Telegram initData is missing")
@@ -69,4 +74,3 @@ export function validateTelegramInitData(
     startParam: params.get("start_param"),
   }
 }
-
